@@ -1,35 +1,19 @@
-import { supabase } from './supabaseClient'
-import { AudioEngine } from './utils/audioEngine'
-import { drawToneChart } from './views/chartView'
+// ═══════════════════════════════════════
+// Just4Tones – Main entry point
+// ═══════════════════════════════════════
+import './styles/global.css'
+import { route, startRouter } from './router.js'
+import { homeView } from './views/homeView.js'
+import { testAView } from './views/testAView.js'
 
-const engine = new AudioEngine()
-const btn = document.querySelector('#record-btn')
-const status = document.querySelector('#status')
-const dataArray = []
-let timer = null
+// Register views
+route('/', homeView)
+route('/test-a', testAView)
 
-// 绑定按钮
-btn.addEventListener('mousedown', startRec)
-btn.addEventListener('mouseup', stopRec)
-btn.addEventListener('touchstart', (e) => { e.preventDefault(); startRec() })
-btn.addEventListener('touchend', (e) => { e.preventDefault(); stopRec() })
+// Future routes:
+// route('/test-b', testBView)
+// route('/test-c', testCView)
+// route('/practice-recognition', practiceRecView)
 
-async function startRec() {
-  const success = await engine.start()
-  if (success) {
-    status.innerText = "Recording..."
-    dataArray.length = 0 // 清空
-    // 启动一个计时器每 20ms 拿一次数据
-    timer = setInterval(() => {
-      const pitch = engine.getPitch()
-      if (pitch && pitch > 50 && pitch < 500) dataArray.push(pitch)
-    }, 20)
-  }
-}
-
-function stopRec() {
-  engine.stop()
-  clearInterval(timer)
-  status.innerText = `Done! Frames: ${dataArray.length}`
-  drawToneChart('canvas', dataArray)
-}
+// Go
+startRouter()
