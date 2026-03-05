@@ -295,8 +295,7 @@ export function testBView(container) {
     document.getElementById('tb-retry').addEventListener('click', startTest)
     document.getElementById('tb-continue').addEventListener('click', () => {
       if (passed) {
-        // TODO: navigate('/test-c') — Step 2 pronunciation test
-        alert('Next: Step 2 — Pronunciation Test (Test C) — coming soon!')
+        navigate('/test-c')
       } else {
         // TODO: navigate('/practice-recognition') — Interface II
         alert('Next: Tone Recognition Exercises (Interface II) — coming soon!')

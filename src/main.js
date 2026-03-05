@@ -8,6 +8,7 @@ import { authView } from './views/authView.js'
 import { homeView } from './views/homeView.js'
 import { testAView } from './views/testAView.js'
 import { testBView } from './views/testBView.js'
+import { testCView } from './views/testCView.js'
 
 // ── Auth state ──
 let currentUser = null
@@ -33,9 +34,10 @@ route('/login', authView)
 route('/', guarded(homeView))
 route('/test-a', guarded(testAView))
 route('/test-b', guarded(testBView))
+route('/test-c', guarded(testCView))
 
 // Future routes:
-// route('/test-c', guarded(testCView))
+// route('/test-d', guarded(testDView))
 // route('/practice-recognition', guarded(practiceRecView))
 
 // ── Init: check session then start ──

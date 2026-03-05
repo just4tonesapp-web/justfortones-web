@@ -52,16 +52,28 @@ export function homeView(container) {
           </button>
         </div>
 
-        <!-- Step 2: Pronunciation (locked) -->
-        <button class="step-card locked animate-in" id="step-2" style="animation-delay:.2s" disabled>
-          <div class="step-num">2</div>
-          <div class="step-body">
-            <h3>Can you pronounce the tones?</h3>
-            <p>Record yourself and compare with the target</p>
-            <span class="step-tag">Tests C & D · coming soon</span>
-          </div>
-          <div class="step-lock">🔒</div>
-        </button>
+        <!-- Step 2: Pronunciation -->
+        <div class="step-group animate-in" style="animation-delay:.2s">
+          <div class="step-group-label">Step 2 · Can you pronounce the tones?</div>
+          <button class="step-card" id="go-test-c">
+            <div class="step-num">C</div>
+            <div class="step-body">
+              <h3>Single Character Pronunciation</h3>
+              <p>See a character, record yourself saying it</p>
+              <span class="step-tag">Test C · 12 questions</span>
+            </div>
+            <div class="step-arrow">→</div>
+          </button>
+          <button class="step-card locked" id="step-d" disabled>
+            <div class="step-num">D</div>
+            <div class="step-body">
+              <h3>Two-Character Pronunciation</h3>
+              <p>Pronounce two-syllable combinations</p>
+              <span class="step-tag">Test D · coming soon</span>
+            </div>
+            <div class="step-lock">🔒</div>
+          </button>
+        </div>
 
         <!-- Step 3: Character tones (locked) -->
         <button class="step-card locked animate-in" id="step-3" style="animation-delay:.3s" disabled>
@@ -80,6 +92,7 @@ export function homeView(container) {
   // Bind navigation
   document.getElementById('go-test-a').addEventListener('click', () => navigate('/test-a'))
   document.getElementById('go-test-b').addEventListener('click', () => navigate('/test-b'))
+  document.getElementById('go-test-c').addEventListener('click', () => navigate('/test-c'))
 
   document.getElementById('logout-btn').addEventListener('click', async () => {
     if (isGuest) {
