@@ -63,6 +63,36 @@ export function applyTone(syllable, tone) {
   return syllable.substring(0, idx) + marks[tone - 1] + syllable.substring(idx + 1)
 }
 
+/**
+ * Generate a two-syllable "word" for Test B.
+ * Each syllable gets its own tone, returning { syl1, tone1, syl2, tone2 }.
+ * Picks from the pool ensuring the two syllables are different.
+ */
+export function makeTwoSyllableItem(pool, tone1, tone2) {
+  const shuffled = shuffle(pool)
+  return {
+    syl1: shuffled[0],
+    tone1,
+    syl2: shuffled[1],
+    tone2,
+  }
+}
+
+/**
+ * Format a two-syllable item as a pinyin string with tone marks.
+ * e.g. { syl1:'da', tone1:4, syl2:'niao', tone2:3 } → 'dànǐao'
+ */
+export function formatTwoSyllable(item) {
+  return applyTone(item.syl1, item.tone1) + applyTone(item.syl2, item.tone2)
+}
+
+/**
+ * Format a two-syllable item as bare pinyin (no tones).
+ */
+export function formatTwoSyllableBare(item) {
+  return item.syl1 + item.syl2
+}
+
 /** Fisher-Yates shuffle (returns new array) */
 export function shuffle(arr) {
   const a = [...arr]

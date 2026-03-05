@@ -2,12 +2,20 @@
 // Home view – Diagnostic landing page
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
+import { supabase } from '../supabaseClient.js'
 
 export function homeView(container) {
+  const isGuest = sessionStorage.getItem('j4t_guest') === '1'
+
   container.innerHTML = `
     <div class="app-shell">
       <header class="home-header">
-        <h1 class="home-title">Just4Tones</h1>
+        <div class="home-top-bar">
+          <h1 class="home-title">Just4Tones</h1>
+          <button class="logout-btn" id="logout-btn" title="${isGuest ? 'Exit guest mode' : 'Log out'}">
+            ${isGuest ? '👤 Guest' : '🚪 Log out'}
+          </button>
+        </div>
         <p class="home-subtitle">Master the four tones of Mandarin Chinese</p>
       </header>
 
@@ -21,32 +29,47 @@ export function homeView(container) {
       </div>
 
       <div class="steps">
-        <button class="step-card animate-in" id="step-1" style="animation-delay:.1s">
-          <div class="step-num">1</div>
-          <div class="step-body">
-            <h3>Can you hear the tones?</h3>
-            <p>Listen to syllables and identify their tones</p>
-            <span class="step-tag">Test A · 12 questions</span>
-          </div>
-          <div class="step-arrow">→</div>
-        </button>
+        <!-- Step 1: Test A + Test B -->
+        <div class="step-group animate-in" style="animation-delay:.1s">
+          <div class="step-group-label">Step 1 · Can you hear the tones?</div>
+          <button class="step-card" id="go-test-a">
+            <div class="step-num">A</div>
+            <div class="step-body">
+              <h3>Single Syllable Tones</h3>
+              <p>Listen to one syllable and pick the correct tone</p>
+              <span class="step-tag">Test A · 12 questions</span>
+            </div>
+            <div class="step-arrow">→</div>
+          </button>
+          <button class="step-card" id="go-test-b">
+            <div class="step-num">B</div>
+            <div class="step-body">
+              <h3>Two-Syllable Tone Pairs</h3>
+              <p>Listen to two syllables and identify both tones</p>
+              <span class="step-tag">Test B · 12 questions</span>
+            </div>
+            <div class="step-arrow">→</div>
+          </button>
+        </div>
 
+        <!-- Step 2: Pronunciation (locked) -->
         <button class="step-card locked animate-in" id="step-2" style="animation-delay:.2s" disabled>
           <div class="step-num">2</div>
           <div class="step-body">
             <h3>Can you pronounce the tones?</h3>
             <p>Record yourself and compare with the target</p>
-            <span class="step-tag">Test C · coming soon</span>
+            <span class="step-tag">Tests C & D · coming soon</span>
           </div>
           <div class="step-lock">🔒</div>
         </button>
 
+        <!-- Step 3: Character tones (locked) -->
         <button class="step-card locked animate-in" id="step-3" style="animation-delay:.3s" disabled>
           <div class="step-num">3</div>
           <div class="step-body">
             <h3>Do you know the character tones?</h3>
             <p>Match tones to the most common characters</p>
-            <span class="step-tag">Test X · coming soon</span>
+            <span class="step-tag">Tests X, Y, Z · coming soon</span>
           </div>
           <div class="step-lock">🔒</div>
         </button>
@@ -54,14 +77,31 @@ export function homeView(container) {
     </div>
   `
 
-  document.getElementById('step-1').addEventListener('click', () => navigate('/test-a'))
+  // Bind navigation
+  document.getElementById('go-test-a').addEventListener('click', () => navigate('/test-a'))
+  document.getElementById('go-test-b').addEventListener('click', () => navigate('/test-b'))
 
-  // styles scoped to this view
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    if (isGuest) {
+      sessionStorage.removeItem('j4t_guest')
+      navigate('/login')
+    } else {
+      await supabase.auth.signOut()
+    }
+  })
+
+  // Scoped styles
   const style = document.createElement('style')
   style.textContent = `
     .home-header {
       text-align: center;
       margin-bottom: 28px;
+    }
+    .home-top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
     }
     .home-title {
       font-size: 2.2rem;
@@ -70,6 +110,23 @@ export function homeView(container) {
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
+    }
+    .logout-btn {
+      position: absolute;
+      right: 0;
+      background: var(--surface);
+      border: 1px solid var(--card-border);
+      color: var(--text-secondary);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-family: inherit;
+      font-size: 0.78rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .logout-btn:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
     }
     .home-subtitle {
       color: var(--text-secondary);
@@ -90,6 +147,31 @@ export function homeView(container) {
 
     .steps { display: flex; flex-direction: column; gap: 12px; }
 
+    .step-group {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .step-group-label {
+      padding: 12px 20px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      border-bottom: 1px solid var(--card-border);
+      background: var(--accent-glow);
+    }
+    .step-group .step-card {
+      border: none;
+      border-radius: 0;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .step-group .step-card:last-child {
+      border-bottom: none;
+    }
+
     .step-card {
       display: flex;
       align-items: center;
@@ -97,7 +179,7 @@ export function homeView(container) {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: var(--radius);
-      padding: 20px;
+      padding: 18px 20px;
       cursor: pointer;
       transition: all 0.2s ease;
       text-align: left;
@@ -106,9 +188,7 @@ export function homeView(container) {
       width: 100%;
     }
     .step-card:hover:not(.locked) {
-      border-color: var(--accent);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(56,189,248,0.15);
+      background: rgba(56,189,248,0.04);
     }
     .step-card.locked {
       opacity: 0.5;
@@ -116,28 +196,28 @@ export function homeView(container) {
     }
 
     .step-num {
-      width: 40px; height: 40px;
+      width: 36px; height: 36px;
       border-radius: 50%;
       background: var(--accent-glow);
       border: 1px solid rgba(56,189,248,0.3);
       display: flex; align-items: center; justify-content: center;
-      font-weight: 700; color: var(--accent);
+      font-weight: 700; font-size: 0.85rem; color: var(--accent);
       flex-shrink: 0;
     }
     .step-body { flex: 1; }
-    .step-body h3 { font-size: 0.95rem; margin-bottom: 4px; }
-    .step-body p { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; }
+    .step-body h3 { font-size: 0.92rem; margin-bottom: 3px; }
+    .step-body p { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; }
     .step-tag {
       display: inline-block;
-      margin-top: 6px;
-      font-size: 0.72rem;
+      margin-top: 5px;
+      font-size: 0.7rem;
       color: var(--accent);
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
     .step-arrow {
-      font-size: 1.3rem;
+      font-size: 1.2rem;
       color: var(--accent);
       flex-shrink: 0;
     }

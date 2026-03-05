@@ -1,15 +1,23 @@
 // ═══════════════════════════════════════
-// Test A – Tone Listening Quiz (12 items)
+// Test B – Two-Syllable Tone Listening (12 items)
+// Identical to Test A but with two-character combos
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
-import { SYLLABLE_POOL, applyTone, shuffle } from '../utils/pinyin.js'
+import { SYLLABLE_POOL, applyTone, shuffle, makeTwoSyllableItem, formatTwoSyllable } from '../utils/pinyin.js'
 import { speakChinese } from '../utils/audio.js'
 
 const TOTAL = 12
 const PASS_SCORE = 10
 
-export function testAView(container) {
-  // ── State ──
+// Pre-build all 16 tone pair combos, then pick 12 ensuring variety
+const ALL_PAIRS = []
+for (let a = 1; a <= 4; a++) {
+  for (let b = 1; b <= 4; b++) {
+    ALL_PAIRS.push([a, b])
+  }
+}
+
+export function testBView(container) {
   let questions = []
   let currentQ = 0
   let score = 0
@@ -18,84 +26,109 @@ export function testAView(container) {
   let qStart = 0
   let testStart = 0
 
-  // ── Generate 12 questions (3 per tone, random syllables) ──
+  // Generate 12 two-syllable questions
+  // Each of the 4 tones appears at least ~3 times across the 24 syllable slots
   function generate() {
-    const tones = shuffle([1,1,1, 2,2,2, 3,3,3, 4,4,4])
-    const syls = shuffle(SYLLABLE_POOL)
-    questions = tones.map((t, i) => ({ syllable: syls[i], tone: t }))
+    // Pick 12 random tone pairs from the 16 combos
+    const pairs = shuffle(ALL_PAIRS).slice(0, 12)
+    const pool = shuffle(SYLLABLE_POOL)
+    let poolIdx = 0
+
+    questions = pairs.map(([t1, t2]) => {
+      const syl1 = pool[poolIdx++]
+      const syl2 = pool[poolIdx++]
+      return { syl1, tone1: t1, syl2, tone2: t2 }
+    })
+  }
+
+  // Build 4 choices: correct pair + 3 distractors (vary tone combos)
+  function makeChoices(q) {
+    const correct = { t1: q.tone1, t2: q.tone2 }
+    const choices = [correct]
+
+    // Generate 3 unique distractor tone combos
+    const allCombos = []
+    for (let a = 1; a <= 4; a++) {
+      for (let b = 1; b <= 4; b++) {
+        if (a !== correct.t1 || b !== correct.t2) {
+          allCombos.push({ t1: a, t2: b })
+        }
+      }
+    }
+    const distractors = shuffle(allCombos).slice(0, 3)
+    choices.push(...distractors)
+
+    return shuffle(choices)
   }
 
   // ── Mount ──
   container.innerHTML = `
     <div class="app-shell">
-      <div class="testa-header">
-        <span class="badge">Diagnostic Step 1</span>
-        <h1>Test A — Tone Listening</h1>
-        <p>Can you identify the four tones by ear?</p>
+      <div class="testb-header">
+        <span class="badge">Diagnostic Step 1b</span>
+        <h1>Test B — Tone Pairs</h1>
+        <p>Can you identify tones in two-syllable combinations?</p>
       </div>
 
       <!-- Intro -->
-      <div id="ta-intro" class="card animate-in text-center">
-        <div style="font-size:3rem;margin-bottom:16px">🎧</div>
-        <h2>Ready to test your ears?</h2>
+      <div id="tb-intro" class="card animate-in text-center">
+        <div style="font-size:3rem;margin-bottom:16px">🎧🎧</div>
+        <h2>Two syllables this time!</h2>
         <p style="color:var(--text-secondary);margin:12px 0;line-height:1.6">
-          You'll hear 12 syllables, each in one of the four tones.<br>
-          Pick the pinyin with the correct tone mark.
+          You'll hear 12 two-syllable combinations.<br>
+          Pick the pinyin with the correct tone marks for both syllables.
         </p>
         <div class="intro-rules">
           <strong>How it works:</strong><br>
           — 12 questions, one at a time<br>
-          — Each tone appears exactly 3 times<br>
-          — Tap the speaker to hear the syllable<br>
-          — Score ${PASS_SCORE}+ to pass ✓
+          — Each item has two syllables with their own tones<br>
+          — Tap the speaker to hear the combination<br>
+          — Score ${PASS_SCORE}+ out of 12 to pass ✓
         </div>
-        <button class="btn btn-primary btn-lg" id="ta-start">Start Test</button>
+        <button class="btn btn-primary btn-lg" id="tb-start">Start Test B</button>
       </div>
 
       <!-- Quiz -->
-      <div id="ta-quiz" class="hidden">
+      <div id="tb-quiz" class="hidden">
         <div class="progress-wrap">
           <div class="progress-info">
-            <span id="ta-prog-label">Question 1 of ${TOTAL}</span>
-            <span class="progress-score" id="ta-prog-score">Score: 0</span>
+            <span id="tb-prog-label">Question 1 of ${TOTAL}</span>
+            <span class="progress-score" id="tb-prog-score">Score: 0</span>
           </div>
           <div class="progress-track">
-            <div class="progress-fill" id="ta-prog-fill" style="width:0%"></div>
+            <div class="progress-fill" id="tb-prog-fill" style="width:0%"></div>
           </div>
         </div>
-        <div class="card animate-in" id="ta-card">
-          <div class="question-label">Listen and identify the tone</div>
+        <div class="card animate-in" id="tb-card">
+          <div class="question-label">Listen and identify both tones</div>
           <div class="audio-area">
-            <button class="play-btn" id="ta-play"><div class="play-icon"></div></button>
-            <div class="play-hint" id="ta-hint">Tap to listen</div>
+            <button class="play-btn" id="tb-play"><div class="play-icon"></div></button>
+            <div class="play-hint" id="tb-hint">Tap to listen</div>
           </div>
-          <div class="choices" id="ta-choices"></div>
+          <div class="choices tb-choices" id="tb-choices"></div>
         </div>
       </div>
 
       <!-- Report -->
-      <div id="ta-report" class="hidden"></div>
+      <div id="tb-report" class="hidden"></div>
     </div>
-    <div class="feedback-toast" id="ta-toast"></div>
+    <div class="feedback-toast" id="tb-toast"></div>
   `
 
-  // inject scoped styles
   const style = document.createElement('style')
   style.textContent = scopedCSS
   container.appendChild(style)
 
-  // ── Bind ──
   const $ = (id) => document.getElementById(id)
-  $('ta-start').addEventListener('click', startTest)
-  $('ta-play').addEventListener('click', playCurrent)
+  $('tb-start').addEventListener('click', startTest)
+  $('tb-play').addEventListener('click', playCurrent)
 
-  // ── Actions ──
   function startTest() {
     generate()
     currentQ = 0; score = 0; answers = []; testStart = Date.now()
-    $('ta-intro').classList.add('hidden')
-    $('ta-quiz').classList.remove('hidden')
-    $('ta-report').classList.add('hidden')
+    $('tb-intro').classList.add('hidden')
+    $('tb-quiz').classList.remove('hidden')
+    $('tb-report').classList.add('hidden')
     loadQ()
   }
 
@@ -104,34 +137,32 @@ export function testAView(container) {
     qStart = Date.now()
     const q = questions[currentQ]
 
-    $('ta-prog-label').textContent = `Question ${currentQ + 1} of ${TOTAL}`
-    $('ta-prog-score').textContent = `Score: ${score}`
-    $('ta-prog-fill').style.width = `${(currentQ / TOTAL) * 100}%`
-    $('ta-hint').textContent = 'Tap to listen'
-    $('ta-play').classList.remove('playing')
+    $('tb-prog-label').textContent = `Question ${currentQ + 1} of ${TOTAL}`
+    $('tb-prog-score').textContent = `Score: ${score}`
+    $('tb-prog-fill').style.width = `${(currentQ / TOTAL) * 100}%`
+    $('tb-hint').textContent = 'Tap to listen'
+    $('tb-play').classList.remove('playing')
 
-    // Build 4 choices in shuffled order
-    const order = shuffle([1, 2, 3, 4])
+    const choices = makeChoices(q)
     const letters = ['A', 'B', 'C', 'D']
-    const toneNames = ['', '1st tone', '2nd tone', '3rd tone', '4th tone']
-    const el = $('ta-choices')
+    const el = $('tb-choices')
     el.innerHTML = ''
 
-    order.forEach((t, idx) => {
+    choices.forEach((c, idx) => {
       const btn = document.createElement('button')
       btn.className = 'choice-btn'
-      btn.dataset.tone = t
+      btn.dataset.t1 = c.t1
+      btn.dataset.t2 = c.t2
+      const pinyin = applyTone(q.syl1, c.t1) + applyTone(q.syl2, c.t2)
       btn.innerHTML = `
         <span class="choice-letter">${letters[idx]}</span>
-        <span class="choice-pinyin">${applyTone(q.syllable, t)}</span>
-        <span class="choice-tone">${toneNames[t]}</span>
+        <span class="choice-pinyin">${pinyin}</span>
       `
-      btn.addEventListener('click', () => pick(t, btn))
+      btn.addEventListener('click', () => pick(c, btn))
       el.appendChild(btn)
     })
 
-    // re-animate
-    const card = $('ta-card')
+    const card = $('tb-card')
     card.style.animation = 'none'
     card.offsetHeight
     card.style.animation = 'cardIn 0.4s ease-out'
@@ -140,12 +171,15 @@ export function testAView(container) {
   function playCurrent() {
     const q = questions[currentQ]
     if (!q) return
-    const btn = $('ta-play')
+    const btn = $('tb-play')
     btn.classList.add('playing')
-    $('ta-hint').textContent = 'Listening…'
-    speakChinese(applyTone(q.syllable, q.tone), q.tone, () => {
+    $('tb-hint').textContent = 'Listening…'
+
+    // Speak first syllable, then second
+    const text = applyTone(q.syl1, q.tone1) + applyTone(q.syl2, q.tone2)
+    speakChinese(text, q.tone1, () => {
       btn.classList.remove('playing')
-      $('ta-hint').textContent = 'Tap to replay'
+      $('tb-hint').textContent = 'Tap to replay'
     })
   }
 
@@ -153,26 +187,34 @@ export function testAView(container) {
     if (answered) return
     answered = true
     const q = questions[currentQ]
-    const ok = selected === q.tone
+    const ok = selected.t1 === q.tone1 && selected.t2 === q.tone2
     if (ok) score++
 
+    const correctPinyin = applyTone(q.syl1, q.tone1) + applyTone(q.syl2, q.tone2)
+    const selectedPinyin = applyTone(q.syl1, selected.t1) + applyTone(q.syl2, selected.t2)
+
     answers.push({
-      syllable: q.syllable,
-      tone: q.tone,
-      selected,
+      syl1: q.syl1, syl2: q.syl2,
+      tone1: q.tone1, tone2: q.tone2,
+      selT1: selected.t1, selT2: selected.t2,
       correct: ok,
+      correctPinyin,
+      selectedPinyin,
       time: Date.now() - qStart,
     })
 
-    // Highlight
-    document.querySelectorAll('#ta-choices .choice-btn').forEach(b => {
-      const t = parseInt(b.dataset.tone)
-      if (t === q.tone) b.classList.add('correct')
-      else if (t === selected && !ok) b.classList.add('incorrect')
+    // Highlight choices
+    document.querySelectorAll('#tb-choices .choice-btn').forEach(b => {
+      const bt1 = parseInt(b.dataset.t1)
+      const bt2 = parseInt(b.dataset.t2)
+      const isCorrect = bt1 === q.tone1 && bt2 === q.tone2
+      const isSelected = bt1 === selected.t1 && bt2 === selected.t2
+      if (isCorrect) b.classList.add('correct')
+      else if (isSelected && !ok) b.classList.add('incorrect')
       b.classList.add('disabled')
     })
 
-    $('ta-prog-score').textContent = `Score: ${score}`
+    $('tb-prog-score').textContent = `Score: ${score}`
     showToast(ok)
 
     setTimeout(() => {
@@ -183,7 +225,7 @@ export function testAView(container) {
   }
 
   function showToast(ok) {
-    const t = $('ta-toast')
+    const t = $('tb-toast')
     t.className = 'feedback-toast'
     const msgs = ok
       ? ['Correct! ✓','Nice ear! ✓','Spot on! ✓','Perfect! ✓']
@@ -196,66 +238,44 @@ export function testAView(container) {
 
   // ── Report ──
   function showReport() {
-    $('ta-quiz').classList.add('hidden')
-    const el = $('ta-report')
+    $('tb-quiz').classList.add('hidden')
+    const el = $('tb-report')
     el.classList.remove('hidden')
 
     const pct = Math.round((score / TOTAL) * 100)
     const passed = score >= PASS_SCORE
-    const totalTime = Date.now() - testStart
-
-    // Tone stats
-    const toneColors = { 1:'var(--tone1)', 2:'var(--tone2)', 3:'var(--tone3)', 4:'var(--tone4)' }
-    const toneNames = { 1:'1st (High)', 2:'2nd (Rising)', 3:'3rd (Dip)', 4:'4th (Fall)' }
-    let toneRows = ''
-    for (let t = 1; t <= 4; t++) {
-      const qs = answers.filter(a => a.tone === t)
-      const c = qs.filter(a => a.correct).length
-      const p = qs.length ? Math.round(c / qs.length * 100) : 0
-      toneRows += `
-        <div class="tone-row">
-          <div class="tone-dot" style="background:${toneColors[t]}"></div>
-          <div class="tone-row-label">${toneNames[t]}</div>
-          <div class="tone-bar-track"><div class="tone-bar-fill" style="width:${p}%;background:${toneColors[t]}"></div></div>
-          <div class="tone-row-pct" style="color:${toneColors[t]}">${p}%</div>
-        </div>`
-    }
 
     // Detail rows
     let details = ''
     answers.forEach((a, i) => {
       const icon = a.correct ? '✅' : '❌'
       const ts = (a.time / 1000).toFixed(1) + 's'
-      const cp = applyTone(a.syllable, a.tone)
-      const sp = applyTone(a.syllable, a.selected)
-      const display = a.correct ? cp : `${sp} → ${cp}`
+      const display = a.correct ? a.correctPinyin : `${a.selectedPinyin} → ${a.correctPinyin}`
       details += `
         <div class="detail-item">
           <span class="detail-icon">${icon}</span>
-          <span class="detail-qn">${i+1}.</span>
+          <span class="detail-qn">${i + 1}.</span>
           <span class="detail-pinyin">${display}</span>
           <span class="detail-time">${ts}</span>
         </div>`
     })
 
-    const verdict = passed
-      ? `🎉 Excellent! You scored <strong>${score}/${TOTAL}</strong>. You can identify and distinguish the four tones competently! Now let's see if you can pronounce them like a native!`
-      : `You scored <strong>${score}/${TOTAL}</strong>. It seems you have some work to do with your ears! Let's practice tone recognition.`
+    let verdict = ''
+    if (passed) {
+      verdict = `🎉 Excellent! You scored <strong>${score}/${TOTAL}</strong> on Test B. It seems that you can identify and distinguish the four tones competently! Now let's see if you can pronounce the four tones like a Chinese native!`
+    } else {
+      verdict = `You scored <strong>${score}/${TOTAL}</strong> on Test B. It seems that you have some work to do with your ears! Let's practice tone recognition.`
+    }
 
     el.innerHTML = `
       <div class="app-shell animate-in">
         <div class="text-center" style="margin-bottom:28px">
-          <h2 style="font-size:1.5rem;margin-bottom:4px">Test A — Results</h2>
+          <h2 style="font-size:1.5rem;margin-bottom:4px">Test B — Results</h2>
           <div class="score-ring" style="--pct:${pct}">
             <span class="score-num">${score}/${TOTAL}</span>
             <span class="score-label">${pct}%</span>
           </div>
           <div style="color:var(--text-secondary);line-height:1.5;padding:0 12px">${verdict}</div>
-        </div>
-
-        <div class="card" style="margin-bottom:16px">
-          <h3 class="section-head">Performance by Tone</h3>
-          ${toneRows}
         </div>
 
         <div class="card" style="margin-bottom:28px">
@@ -264,18 +284,19 @@ export function testAView(container) {
         </div>
 
         <div class="report-actions">
-          <button class="btn btn-secondary" id="ta-retry">🔄 Retake</button>
-          <button class="btn btn-primary" id="ta-continue">
-            ${passed ? '→ Continue to Test B' : '→ Practice Tones'}
+          <button class="btn btn-secondary" id="tb-retry">🔄 Retake</button>
+          <button class="btn btn-primary" id="tb-continue">
+            ${passed ? '→ Continue to Step 2' : '→ Practice Tones'}
           </button>
         </div>
       </div>
     `
 
-    document.getElementById('ta-retry').addEventListener('click', startTest)
-    document.getElementById('ta-continue').addEventListener('click', () => {
+    document.getElementById('tb-retry').addEventListener('click', startTest)
+    document.getElementById('tb-continue').addEventListener('click', () => {
       if (passed) {
-        navigate('/test-b')
+        // TODO: navigate('/test-c') — Step 2 pronunciation test
+        alert('Next: Step 2 — Pronunciation Test (Test C) — coming soon!')
       } else {
         // TODO: navigate('/practice-recognition') — Interface II
         alert('Next: Tone Recognition Exercises (Interface II) — coming soon!')
@@ -285,14 +306,14 @@ export function testAView(container) {
 }
 
 // ═══════════════════════════════════════
-// Scoped CSS for Test A
+// Scoped CSS (reuses most of Test A styles + overrides)
 // ═══════════════════════════════════════
 const scopedCSS = `
-  .testa-header {
+  .testb-header {
     text-align: center;
     margin-bottom: 28px;
   }
-  .testa-header h1 {
+  .testb-header h1 {
     font-size: 1.65rem;
     font-weight: 700;
     margin: 10px 0 6px;
@@ -301,7 +322,7 @@ const scopedCSS = `
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
-  .testa-header p {
+  .testb-header p {
     color: var(--text-secondary);
     font-size: 0.95rem;
   }
@@ -318,7 +339,6 @@ const scopedCSS = `
   }
   .intro-rules strong { color: var(--text-primary); }
 
-  /* Progress */
   .progress-wrap { margin-bottom: 24px; }
   .progress-info {
     display: flex; justify-content: space-between;
@@ -337,7 +357,6 @@ const scopedCSS = `
     transition: width 0.5s cubic-bezier(0.22,1,0.36,1);
   }
 
-  /* Question card inner */
   .question-label {
     text-align: center; font-size: 0.85rem;
     color: var(--text-muted); margin-bottom: 20px;
@@ -347,7 +366,6 @@ const scopedCSS = `
     display: flex; flex-direction: column;
     align-items: center; margin-bottom: 28px;
   }
-
   .play-btn {
     width: 96px; height: 96px; border-radius: 50%;
     border: 2px solid var(--accent);
@@ -379,17 +397,20 @@ const scopedCSS = `
     margin-top: 12px; font-size: 0.82rem; color: var(--text-muted);
   }
 
-  /* Choices */
-  .choices {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  /* Test B uses a single-column layout for longer pinyin */
+  .tb-choices {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px;
   }
   .choice-btn {
     background: var(--surface);
     border: 2px solid var(--card-border);
     border-radius: var(--radius-sm);
-    padding: 16px 12px; cursor: pointer;
+    padding: 14px 16px; cursor: pointer;
     text-align: center; transition: all 0.2s ease;
     font-family: inherit; color: var(--text-primary);
+    display: flex; align-items: center; gap: 12px;
   }
   .choice-btn:hover:not(.disabled) {
     border-color: var(--accent);
@@ -397,12 +418,12 @@ const scopedCSS = `
     transform: translateY(-2px);
   }
   .choice-letter {
-    display: block; font-size: 0.72rem; font-weight: 600;
-    color: var(--text-muted); margin-bottom: 4px;
+    font-size: 0.75rem; font-weight: 600;
+    color: var(--text-muted);
     text-transform: uppercase; letter-spacing: 0.08em;
+    flex-shrink: 0; width: 24px;
   }
-  .choice-pinyin { font-size: 1.35rem; font-weight: 600; }
-  .choice-tone { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; display: block; }
+  .choice-pinyin { font-size: 1.2rem; font-weight: 600; }
   .choice-btn.correct { border-color: var(--correct); background: var(--correct-bg); }
   .choice-btn.correct .choice-pinyin { color: var(--correct); }
   .choice-btn.incorrect { border-color: var(--incorrect); background: var(--incorrect-bg); }
@@ -430,14 +451,6 @@ const scopedCSS = `
     letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 16px;
   }
 
-  .tone-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-  .tone-row:last-child { margin-bottom: 0; }
-  .tone-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-  .tone-row-label { flex: 0 0 110px; font-size: 0.85rem; color: var(--text-secondary); }
-  .tone-bar-track { flex: 1; height: 8px; background: var(--surface); border-radius: 4px; overflow: hidden; }
-  .tone-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(0.22,1,0.36,1); }
-  .tone-row-pct { flex: 0 0 36px; text-align: right; font-size: 0.82rem; font-weight: 600; }
-
   .detail-item {
     display: flex; align-items: center; gap: 10px;
     padding: 10px 0; border-bottom: 1px solid var(--card-border); font-size: 0.88rem;
@@ -451,11 +464,7 @@ const scopedCSS = `
   .report-actions { display: flex; gap: 12px; }
 
   @media (max-width: 480px) {
-    .choices { gap: 10px; }
-    .choice-btn { padding: 14px 8px; }
-    .choice-pinyin { font-size: 1.15rem; }
     .play-btn { width: 80px; height: 80px; }
     .report-actions { flex-direction: column; }
-    .tone-row-label { flex: 0 0 90px; }
   }
 `
