@@ -6,7 +6,9 @@
 import { navigate } from '../router.js'
 import { applyTone, shuffle } from '../utils/pinyin.js'
 import { speakChinese } from '../utils/audio.js'
-import { AudioEngine, analyzeTone } from '../utils/audioEngine.js'
+import { AudioEngine } from '../utils/audioEngine.js'
+import { toneDetector } from '../utils/toneDetector.js'
+import { getMelSpectrogramImage } from '../utils/models/tonetModel.js'
 
 const TOTAL = 12
 const PASS_SCORE = 10
@@ -50,6 +52,27 @@ export function testCView(container) {
   let recordTimer = null
   let levelInterval = null
 
+  // Start loading models in the background immediately
+  toneDetector.init((model, status, pct) => {
+    updateModelStatus()
+  })
+
+  function updateModelStatus() {
+    const all = ['pitch', 'whisper', 'tonenet']
+    const icons = all.map(m => {
+      if (m === 'pitch') return '✓ pitch'
+      if (toneDetector.loaded[m]) return `✓ ${m}`
+      if (toneDetector.failed[m]) return `✗ ${m}`
+      if (toneDetector._loading[m]) return `⏳ ${m}`
+      return `— ${m}`
+    })
+    const text = icons.join('  ·  ')
+    document.querySelectorAll('#tc-model-status').forEach(el => el.textContent = text)
+  }
+
+  // Show initial state immediately
+  updateModelStatus()
+
   function generate() {
     // Pick 3 per tone, total 12
     const byTone = { 1: [], 2: [], 3: [], 4: [] }
@@ -87,14 +110,18 @@ export function testCView(container) {
           — Your pitch contour is compared to the target tone<br>
           — Score ${PASS_SCORE}+ out of 12 to pass ✓
         </div>
-        <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:16px">
+        <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:8px">
           ⚠️ Allow microphone access when prompted
+        </p>
+        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.75rem;margin-bottom:16px">
+          Loading AI models…
         </p>
         <button class="btn btn-primary btn-lg" id="tc-start">Start Test C</button>
       </div>
 
       <!-- Quiz -->
       <div id="tc-quiz" class="hidden">
+        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.72rem;text-align:center;margin-bottom:8px"></p>
         <div class="progress-wrap">
           <div class="progress-info">
             <span id="tc-prog-label">Question 1 of ${TOTAL}</span>
@@ -139,6 +166,15 @@ export function testCView(container) {
               <span class="tc-legend-item"><span class="tc-leg-dot" style="background:var(--accent)"></span> Target</span>
               <span class="tc-legend-item"><span class="tc-leg-dot" style="background:var(--tone1)"></span> Your voice</span>
             </div>
+          </div>
+
+          <!-- Mel-spectrogram debug view (compare with Python/librosa output) -->
+          <div class="hidden" id="tc-mel-wrap" style="text-align:center;margin:8px 0">
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:4px">
+              Mel-spectrogram fed to ToneNet (compare with Python/librosa to verify pipeline)
+            </div>
+            <canvas id="tc-mel-canvas" width="225" height="225"
+              style="border:1px solid var(--card-border);border-radius:4px;max-width:100%;image-rendering:pixelated"></canvas>
           </div>
 
           <!-- Result for this question -->
@@ -195,6 +231,7 @@ export function testCView(container) {
     $('tc-record').disabled = false
     $('tc-level-bar').style.width = '0%'
     $('tc-contour-wrap').classList.add('hidden')
+    $('tc-mel-wrap').classList.add('hidden')
     $('tc-q-result').classList.add('hidden')
     $('tc-listen').disabled = false
 
@@ -210,7 +247,7 @@ export function testCView(container) {
     const btn = $('tc-listen')
     btn.textContent = '🔊 Playing…'
     btn.disabled = true
-    speakChinese(applyTone(q.base, q.tone), q.tone, () => {
+    speakChinese(q.char, q.tone, () => {
       btn.textContent = '🔊 Listen again'
       btn.disabled = false
     })
@@ -251,29 +288,45 @@ export function testCView(container) {
     }, 3000)
   }
 
-  function stopRecording() {
+  async function stopRecording() {
     clearTimeout(recordTimer)
     clearInterval(levelInterval)
-    const history = engine.stop()
+    const recording = engine.stop()
     isRecording = false
 
-    $('tc-rec-label').textContent = 'Done'
-    $('tc-rec-icon').textContent = '✓'
-    $('tc-rec-status').textContent = 'Analyzing…'
+    $('tc-rec-label').textContent = 'Analyzing…'
+    $('tc-rec-icon').textContent = '⏳'
+    $('tc-rec-status').textContent = `Using ${toneDetector.activeModels.length} model(s)…`
     $('tc-record').classList.remove('recording')
     $('tc-record').disabled = true
     $('tc-level-bar').style.width = '0%'
 
-    // Analyze
     const q = questions[currentQ]
-    const result = analyzeTone(history, q.tone)
 
-    // Draw contour
-    drawContour(result.userContour, result.targetContour)
+    // ── Run ensemble detection ──
+    const ensemble = await toneDetector.detect(
+      { samples: recording.samples, sampleRate: recording.sampleRate },
+      q.base
+    )
+
+    // Target contour for canvas
+    const TARGET_CONTOURS = {
+      1: [5, 5, 5, 5, 5],
+      2: [3, 3.5, 4, 4.5, 5],
+      3: [2, 1.5, 1, 1.5, 4],
+      4: [5, 4, 3, 2, 1],
+    }
+
+    drawContour(ensemble.userContour, TARGET_CONTOURS[q.tone])
     $('tc-contour-wrap').classList.remove('hidden')
 
-    // Determine pass/fail for this question
-    const passed = result.score >= 60
+    // Debug: render mel-spectrogram so we can visually verify the JS pipeline
+    drawMelSpectrogram(getMelSpectrogramImage(recording.samples, recording.sampleRate))
+    $('tc-mel-wrap').classList.remove('hidden')
+
+    // Pass if detected tone matches target
+    const detectedTone = ensemble.tone
+    const passed = detectedTone === q.tone
     if (passed) score++
 
     answers.push({
@@ -281,32 +334,54 @@ export function testCView(container) {
       base: q.base,
       tone: q.tone,
       meaning: q.meaning,
-      score: result.score,
-      detectedTone: result.detectedTone,
+      detectedTone,
+      confidence: ensemble.confidence,
+      agreement: ensemble.agreement,
+      modelResults: ensemble.results,
       passed,
     })
 
-    // Show result
-    $('tc-q-score').textContent = `${result.score}%`
+    // Score display — show confidence instead of arbitrary %
+    const confText = ensemble.tone ? `${ensemble.confidence}% confident` : '—'
+    $('tc-q-score').textContent = passed ? '✓' : '✗'
     $('tc-q-score').style.color = passed ? 'var(--correct)' : 'var(--incorrect)'
 
+    const toneNames = { 1: '1st (High ‾)', 2: '2nd (Rising ↗)', 3: '3rd (Dip ↘↗)', 4: '4th (Falling ↘)' }
     let msg = ''
-    if (result.score >= 85) msg = '🎉 Excellent tone!'
-    else if (result.score >= 70) msg = '👍 Good match!'
-    else if (result.score >= 60) msg = '✓ Close enough — keep practicing'
-    else if (result.detectedTone) {
-      const toneNames = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th' }
-      msg = `Sounded more like ${toneNames[result.detectedTone]} tone`
-    } else {
+    if (!detectedTone) {
       msg = 'Could not detect a clear tone — try speaking louder'
+    } else if (passed) {
+      msg = `Detected: ${toneNames[detectedTone]} · ${confText}`
+    } else {
+      msg = `Detected ${toneNames[detectedTone]}, expected ${toneNames[q.tone]} · ${confText}`
     }
-    $('tc-q-msg').textContent = msg
-    $('tc-q-result').classList.remove('hidden')
 
+    // Show per-model breakdown
+    const modelBreakdown = ensemble.results.map(r => {
+      const icon = r.tone === q.tone ? '✓' : '✗'
+      return `${r.model}:T${r.tone}${icon}`
+    }).join('  ')
+
+    $('tc-q-msg').textContent = msg
+    $('tc-q-msg').title = modelBreakdown // tooltip with model details
+
+    // Show model breakdown below message
+    let breakdownEl = document.getElementById('tc-model-breakdown')
+    if (!breakdownEl) {
+      breakdownEl = document.createElement('div')
+      breakdownEl.id = 'tc-model-breakdown'
+      breakdownEl.style.cssText = 'font-size:0.72rem;color:var(--text-muted);margin-top:4px;letter-spacing:0.03em'
+      $('tc-q-result').insertBefore(breakdownEl, $('tc-next'))
+    }
+    breakdownEl.textContent = modelBreakdown || 'pitch only'
+
+    $('tc-q-result').classList.remove('hidden')
     $('tc-prog-score').textContent = `Score: ${score}`
     showToast(passed)
 
-    $('tc-rec-status').textContent = passed ? 'Passed!' : 'Not quite'
+    $('tc-rec-label').textContent = 'Done'
+    $('tc-rec-icon').textContent = passed ? '✓' : '✗'
+    $('tc-rec-status').textContent = passed ? 'Correct!' : 'Not quite'
   }
 
   function nextQuestion() {
@@ -364,6 +439,22 @@ export function testCView(container) {
 
     // User (solid)
     drawLine(userContour, '#f87171', 3)
+  }
+
+  // ── Draw mel-spectrogram debug view ──
+  function drawMelSpectrogram(floatRgb) {
+    const canvas = $('tc-mel-canvas')
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    const W = 225, H = 225
+    const imageData = ctx.createImageData(W, H)
+    for (let i = 0; i < W * H; i++) {
+      imageData.data[i * 4]     = Math.round(floatRgb[i * 3]     * 255)
+      imageData.data[i * 4 + 1] = Math.round(floatRgb[i * 3 + 1] * 255)
+      imageData.data[i * 4 + 2] = Math.round(floatRgb[i * 3 + 2] * 255)
+      imageData.data[i * 4 + 3] = 255
+    }
+    ctx.putImageData(imageData, 0, 0)
   }
 
   function showToast(ok) {

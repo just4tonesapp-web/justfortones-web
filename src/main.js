@@ -9,6 +9,7 @@ import { homeView } from './views/homeView.js'
 import { testAView } from './views/testAView.js'
 import { testBView } from './views/testBView.js'
 import { testCView } from './views/testCView.js'
+import { testDView } from './views/testDView.js'
 
 // ── Auth state ──
 let currentUser = null
@@ -35,6 +36,7 @@ route('/', guarded(homeView))
 route('/test-a', guarded(testAView))
 route('/test-b', guarded(testBView))
 route('/test-c', guarded(testCView))
+route('/test-d', guarded(testDView))
 
 // Future routes:
 // route('/test-d', guarded(testDView))

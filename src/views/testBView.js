@@ -3,7 +3,7 @@
 // Identical to Test A but with two-character combos
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
-import { SYLLABLE_POOL, applyTone, shuffle, makeTwoSyllableItem, formatTwoSyllable } from '../utils/pinyin.js'
+import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle, makeTwoSyllableItem } from '../utils/pinyin.js'
 import { speakChinese } from '../utils/audio.js'
 
 const TOTAL = 12
@@ -176,8 +176,9 @@ export function testBView(container) {
     $('tb-hint').textContent = 'Listening…'
 
     // Speak first syllable, then second
-    const text = applyTone(q.syl1, q.tone1) + applyTone(q.syl2, q.tone2)
-    speakChinese(text, q.tone1, () => {
+    const char1 = getTTSChar(q.syl1, q.tone1) ?? ''
+    const char2 = getTTSChar(q.syl2, q.tone2) ?? ''
+    speakChinese(char1 + char2 || null, q.tone1, () => {
       btn.classList.remove('playing')
       $('tb-hint').textContent = 'Tap to replay'
     })

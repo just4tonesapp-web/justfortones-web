@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════
-// AudioEngine – Mic recording + pitch detection
-// Uses pitchfinder (Yin algorithm)
+// AudioEngine – Mic recording + raw PCM capture
+// Now collects both pitch history (legacy) AND raw samples (for ensemble models)
 // ═══════════════════════════════════════
-import { Yin } from 'pitchfinder'
+import { YIN } from 'pitchfinder'
 
 export class AudioEngine {
   constructor() {
@@ -12,7 +12,8 @@ export class AudioEngine {
     this.stream = null
     this.analyser = null
     this.source = null
-    this.pitchHistory = []   // { time, pitch, rms }
+    this.pitchHistory = []   // { time, pitch, rms } — kept for legacy/canvas use
+    this.rawChunks = []      // Float32Array chunks — for ensemble models
     this.startTime = 0
     this._raf = null
   }
@@ -24,7 +25,7 @@ export class AudioEngine {
     if (this.audioContext.state === 'suspended') await this.audioContext.resume()
 
     const sampleRate = this.audioContext.sampleRate
-    this.detectPitch = Yin({ sampleRate })
+    this.detectPitch = YIN({ sampleRate })
 
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -33,9 +34,21 @@ export class AudioEngine {
       this.analyser.fftSize = 2048
       this.source.connect(this.analyser)
 
+      // ScriptProcessorNode gives non-overlapping PCM chunks (unlike getFloatTimeDomainData)
+      this.processor = this.audioContext.createScriptProcessor(4096, 1, 1)
+      this.source.connect(this.processor)
+      this.processor.connect(this.audioContext.destination)
+
       this.pitchHistory = []
+      this.rawChunks = []
       this.isRecording = true
       this.startTime = performance.now()
+
+      this.processor.onaudioprocess = (e) => {
+        if (!this.isRecording) return
+        this.rawChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)))
+      }
+
       this._loop()
       return true
     } catch (err) {
@@ -90,8 +103,20 @@ export class AudioEngine {
   stop() {
     this.isRecording = false
     if (this._raf) cancelAnimationFrame(this._raf)
+    if (this.processor) { this.processor.disconnect(); this.processor = null }
     if (this.stream) this.stream.getTracks().forEach(t => t.stop())
-    return this.pitchHistory
+
+    // Concatenate raw chunks into a single Float32Array for ensemble models
+    const totalLen = this.rawChunks.reduce((s, c) => s + c.length, 0)
+    const samples = new Float32Array(totalLen)
+    let offset = 0
+    for (const chunk of this.rawChunks) { samples.set(chunk, offset); offset += chunk.length }
+
+    return {
+      pitchHistory: this.pitchHistory,
+      samples,
+      sampleRate: this.audioContext.sampleRate,
+    }
   }
 
   /** Get only the valid pitch values as an array of Hz */

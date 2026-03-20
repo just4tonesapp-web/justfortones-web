@@ -2,7 +2,7 @@
 // Test A – Tone Listening Quiz (12 items)
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
-import { SYLLABLE_POOL, applyTone, shuffle } from '../utils/pinyin.js'
+import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle } from '../utils/pinyin.js'
 import { speakChinese } from '../utils/audio.js'
 
 const TOTAL = 12
@@ -143,7 +143,7 @@ export function testAView(container) {
     const btn = $('ta-play')
     btn.classList.add('playing')
     $('ta-hint').textContent = 'Listening…'
-    speakChinese(applyTone(q.syllable, q.tone), q.tone, () => {
+    speakChinese(getTTSChar(q.syllable, q.tone), q.tone, () => {
       btn.classList.remove('playing')
       $('ta-hint').textContent = 'Tap to replay'
     })

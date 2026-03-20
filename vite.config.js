@@ -5,5 +5,12 @@ export default defineConfig({
   base: '/justfortones-web/',
   build: {
     outDir: 'dist'
-  }
+  },
+  optimizeDeps: {
+    // These packages use WASM/workers and must not be pre-bundled by esbuild
+    exclude: ['@xenova/transformers'],
+  },
+  worker: {
+    format: 'es',
+  },
 })

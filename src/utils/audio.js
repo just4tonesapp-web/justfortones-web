@@ -60,14 +60,20 @@ export function playToneSynth(toneNumber, duration = 0.8) {
  * @param {number} tone – tone number 1-4 (fallback)
  * @param {Function} [onEnd] – callback when done
  */
-export function speakChinese(text, tone, onEnd) {
-  if ('speechSynthesis' in window) {
-    const u = new SpeechSynthesisUtterance(text)
+/**
+ * Speak a Chinese character/word using zh-CN TTS, falling back to tone synth.
+ * @param {string} char - Chinese character(s) to speak (NOT pinyin)
+ * @param {number} tone - tone number 1-4 (used only for synth fallback)
+ * @param {Function} [onEnd]
+ */
+export function speakChinese(char, tone, onEnd) {
+  if ('speechSynthesis' in window && char) {
+    const u = new SpeechSynthesisUtterance(char)
     u.lang = 'zh-CN'
-    u.rate = 0.75
+    u.rate = 0.8
 
     const voices = speechSynthesis.getVoices()
-    const zh = voices.find(v => v.lang.startsWith('zh'))
+    const zh = voices.find(v => v.lang === 'zh-CN') || voices.find(v => v.lang.startsWith('zh'))
     if (zh) {
       u.voice = zh
       u.onend = () => onEnd?.()
