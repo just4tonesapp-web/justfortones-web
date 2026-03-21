@@ -16,16 +16,20 @@ Output: tone_classifier_int8.onnx (~24MB) — download and put in public/models/
 
 # %% Cell 1 — Install dependencies
 # Runtime: ~3 min
+# After this cell finishes, go to Runtime → Restart session, then run from Cell 2 onward.
 !pip install -q \
-    transformers==4.40.0 \
+    "transformers>=4.44.0" \
     datasets \
     torch torchaudio \
-    onnx onnxruntime \
+    onnx "onnxruntime>=1.18.0" \
     optimum \
     edge-tts \
     pypinyin \
     librosa soundfile \
-    audiomentations
+    audiomentations evaluate
+
+import IPython
+IPython.display.display(IPython.display.Javascript('google.colab.kernel.restart()'))
 
 # %% Cell 2 — Syllable + character data
 # 50 syllables that have all 4 tones in common Mandarin words.
