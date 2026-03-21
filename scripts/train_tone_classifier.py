@@ -402,40 +402,45 @@ model.save_pretrained(SAVE_DIR)
 feature_extractor.save_pretrained(SAVE_DIR)
 print(f"Saved to {SAVE_DIR}")
 
-# %% Cell 11 — Export to ONNX + INT8 quantize via optimum
-import subprocess
-subprocess.run(['pip', 'install', '-q', 'optimum[onnxruntime]'], check=True)
-from optimum.onnxruntime import ORTModelForAudioClassification, ORTQuantizer
-from optimum.onnxruntime.configuration import AutoQuantizationConfig
-import os
+# %% Cell 11 — Export to ONNX + INT8 quantize
+import subprocess, os
+subprocess.run(['pip', 'install', '-q', 'onnxscript'], check=True)
+import torch
 
-ONNX_DIR  = '/content/onnx_fp32'
-QUANT_DIR = '/content/onnx_int8'
-ONNX_PATH = os.path.join(ONNX_DIR, 'model.onnx')
-QUANT_PATH = os.path.join(QUANT_DIR, 'model_quantized.onnx')
+ONNX_PATH = '/content/tone_classifier.onnx'
+QUANT_PATH = '/content/tone_classifier_int8.onnx'
 
-# Export: loads the saved HF model and converts to ONNX
-print("Exporting to ONNX via optimum...")
-ort_model = ORTModelForAudioClassification.from_pretrained(SAVE_DIR, export=True)
-ort_model.save_pretrained(ONNX_DIR)
-size_mb = os.path.getsize(ONNX_PATH) / 1024 / 1024
-print(f"FP32 ONNX: {ONNX_PATH} ({size_mb:.1f} MB)")
+# FP32 export
+model.eval()
+model.cpu()
+dummy = torch.zeros(1, MAX_LENGTH)
+torch.onnx.export(
+    model, (dummy,), ONNX_PATH,
+    input_names=['input_values'],
+    output_names=['logits'],
+    dynamic_axes={'input_values': {0: 'batch', 1: 'sequence'}, 'logits': {0: 'batch'}},
+    opset_version=14,
+)
+print(f"FP32 ONNX: {os.path.getsize(ONNX_PATH)/1024/1024:.1f} MB")
 
-# INT8 dynamic quantization
-print("Quantizing to INT8...")
-quantizer = ORTQuantizer.from_pretrained(ONNX_DIR)
-qconfig = AutoQuantizationConfig.avx512_vnni(is_static=False, per_channel=False)
-quantizer.quantize(save_dir=QUANT_DIR, quantization_config=qconfig)
-size_mb_q = os.path.getsize(QUANT_PATH) / 1024 / 1024
-print(f"INT8 ONNX: {QUANT_PATH} ({size_mb_q:.1f} MB)")
+# INT8 quantize — MatMul only, skips the Gemm→shape-inference step that crashes
+from onnxruntime.quantization import quantize_dynamic, QuantType
+quantize_dynamic(
+    ONNX_PATH, QUANT_PATH,
+    weight_type=QuantType.QInt8,
+    op_types_to_quantize=['MatMul'],
+)
+print(f"INT8 ONNX: {os.path.getsize(QUANT_PATH)/1024/1024:.1f} MB")
 
 # %% Cell 13 — Validate ONNX model
 import onnxruntime as ort
 import numpy as np
 
 sess = ort.InferenceSession(QUANT_PATH, providers=['CPUExecutionProvider'])
-print(f"Input:  {sess.get_inputs()[0].name}  {sess.get_inputs()[0].shape}")
-print(f"Output: {sess.get_outputs()[0].name}  {sess.get_outputs()[0].shape}")
+inp = sess.get_inputs()[0]
+out = sess.get_outputs()[0]
+print(f"Input:  {inp.name}  {inp.shape}  {inp.type}")
+print(f"Output: {out.name}  {out.shape}  {out.type}")
 
 # Test each tone with a sample from the validation set
 print("ONNX validation (sample predictions):")
