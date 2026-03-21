@@ -377,34 +377,24 @@ trainer = Trainer(
 trainer.train()
 
 # %% Cell 9 — Evaluate final accuracy
-results = trainer.evaluate()
-print(f"\nFinal validation accuracy: {results['eval_accuracy']*100:.1f}%")
-
-# Per-tone breakdown
-from torch.nn.functional import softmax as torch_softmax
-
+log = trainer.state.log_history
+eval_entries = [e for e in log if 'eval_accuracy' in e]
+best = max(eval_entries, key=lambda e: e['eval_accuracy']) if eval_entries else {}
+print(f"Best val accuracy: {best.get('eval_accuracy', 0)*100:.1f}%  (epoch {best.get('epoch', '?')})")
+print(f"Best val loss:     {best.get('eval_loss', '?')}")
 model.eval()
 device = next(model.parameters()).device
-
 correct = {t: 0 for t in range(4)}
-total   = {t: 0 for t in range(4)}
-
+total = {t: 0 for t in range(4)}
 val_loader = torch.utils.data.DataLoader(ds_processed['validation'], batch_size=64)
 with torch.no_grad():
     for batch in val_loader:
-        input_values = batch['input_values'].to(device)
-        labels = batch['labels']
-        logits = model(input_values).logits
-        preds = logits.argmax(dim=-1).cpu()
-        for pred, label in zip(preds, labels):
+        preds = model(batch['input_values'].to(device)).logits.argmax(dim=-1).cpu()
+        for pred, label in zip(preds, batch['labels']):
             total[label.item()] += 1
-            if pred.item() == label.item():
-                correct[label.item()] += 1
-
+            correct[label.item()] += int(pred.item() == label.item())
 print("\nPer-tone accuracy:")
-for t in range(4):
-    pct = correct[t] / total[t] * 100 if total[t] > 0 else 0
-    print(f"  Tone {t+1}: {correct[t]}/{total[t]} = {pct:.1f}%")
+[print(f"  Tone {t+1}: {correct[t]}/{total[t]} = {correct[t]/total[t]*100:.1f}%") for t in range(4)]
 
 # %% Cell 10 — Save fine-tuned model
 SAVE_DIR = '/content/tone_model_final'
