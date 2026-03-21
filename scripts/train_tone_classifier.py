@@ -402,35 +402,42 @@ model.save_pretrained(SAVE_DIR)
 feature_extractor.save_pretrained(SAVE_DIR)
 print(f"Saved to {SAVE_DIR}")
 
-# %% Cell 11 — Export to ONNX + INT8 quantize
-import subprocess, os
-subprocess.run(['pip', 'install', '-q', 'onnxscript'], check=True)
-import torch
+# %% Cell 11 — Export to ONNX
+# Wrap model to return plain tensor — required for legacy TorchScript tracer
+import torch, torch.nn as nn, os
+
+class ToneWrapper(nn.Module):
+    def __init__(self, m): super().__init__(); self.m = m
+    def forward(self, x): return self.m(x).logits
 
 ONNX_PATH = '/content/tone_classifier.onnx'
 QUANT_PATH = '/content/tone_classifier_int8.onnx'
 
-# FP32 export
-model.eval()
-model.cpu()
+wrapper = ToneWrapper(model).eval().cpu()
 dummy = torch.zeros(1, MAX_LENGTH)
-torch.onnx.export(
-    model, (dummy,), ONNX_PATH,
-    input_names=['input_values'],
-    output_names=['logits'],
-    dynamic_axes={'input_values': {0: 'batch', 1: 'sequence'}, 'logits': {0: 'batch'}},
-    opset_version=14,
-)
-print(f"FP32 ONNX: {os.path.getsize(ONNX_PATH)/1024/1024:.1f} MB")
 
-# INT8 quantize — MatMul only, skips the Gemm→shape-inference step that crashes
+with torch.no_grad():
+    torch.onnx.export(
+        wrapper, dummy, ONNX_PATH,
+        input_names=['input_values'],
+        output_names=['logits'],
+        dynamic_axes={'input_values': {0: 'batch', 1: 'sequence'}, 'logits': {0: 'batch'}},
+        opset_version=17,
+        do_constant_folding=True,
+    )
+
+size_mb = os.path.getsize(ONNX_PATH) / 1024 / 1024
+print(f"FP32 ONNX: {size_mb:.1f} MB")
+assert size_mb > 10, f"Export failed — model is only {size_mb:.1f} MB (expected ~90 MB)"
+
+# INT8 quantize (try MatMul-only; fall back to FP32 if shape inference fails)
 from onnxruntime.quantization import quantize_dynamic, QuantType
-quantize_dynamic(
-    ONNX_PATH, QUANT_PATH,
-    weight_type=QuantType.QInt8,
-    op_types_to_quantize=['MatMul'],
-)
-print(f"INT8 ONNX: {os.path.getsize(QUANT_PATH)/1024/1024:.1f} MB")
+try:
+    quantize_dynamic(ONNX_PATH, QUANT_PATH, weight_type=QuantType.QInt8, op_types_to_quantize=['MatMul'])
+    print(f"INT8 ONNX: {os.path.getsize(QUANT_PATH)/1024/1024:.1f} MB")
+except Exception as e:
+    print(f"Quantization failed ({e}) — using FP32 model instead")
+    import shutil; shutil.copy(ONNX_PATH, QUANT_PATH)
 
 # %% Cell 13 — Validate ONNX model
 import onnxruntime as ort
