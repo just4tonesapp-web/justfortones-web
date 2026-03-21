@@ -403,10 +403,10 @@ feature_extractor.save_pretrained(SAVE_DIR)
 print(f"Saved to {SAVE_DIR}")
 
 # %% Cell 11 — Export to ONNX + INT8 quantize via optimum
-# optimum handles HuBERT shape inference correctly (torch.onnx.export does not)
-from optimum.onnxruntime import ORTModelForAudioClassification
+import subprocess
+subprocess.run(['pip', 'install', '-q', 'optimum[onnxruntime]'], check=True)
+from optimum.onnxruntime import ORTModelForAudioClassification, ORTQuantizer
 from optimum.onnxruntime.configuration import AutoQuantizationConfig
-from optimum.onnxruntime import ORTQuantizer
 import os
 
 ONNX_DIR  = '/content/onnx_fp32'
