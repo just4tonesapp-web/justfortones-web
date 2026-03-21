@@ -403,6 +403,8 @@ feature_extractor.save_pretrained(SAVE_DIR)
 print(f"Saved to {SAVE_DIR}")
 
 # %% Cell 11 — Export to ONNX
+import subprocess
+subprocess.run(['pip', 'install', '-q', 'onnxscript'], check=True)
 import torch.onnx
 
 model.eval()
