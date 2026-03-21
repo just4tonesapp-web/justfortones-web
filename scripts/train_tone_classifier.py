@@ -15,21 +15,15 @@ Output: tone_classifier_int8.onnx (~24MB) — download and put in public/models/
 # exports to ONNX INT8 for browser use with onnxruntime-web.
 
 # %% Cell 1 — Install dependencies
-# Runtime: ~3 min
-# After this cell finishes, go to Runtime → Restart session, then run from Cell 2 onward.
-!pip install -q \
-    "transformers>=4.44.0" \
-    datasets \
-    torch torchaudio \
-    onnx "onnxruntime>=1.18.0" \
-    optimum \
-    edge-tts \
-    pypinyin \
-    librosa soundfile \
-    audiomentations evaluate
+# Colab already has transformers, torch, torchaudio, librosa — don't reinstall them.
+# Only install packages Colab is missing.
+!pip install -q edge-tts audiomentations evaluate optimum onnx soundfile
 
-import IPython
-IPython.display.display(IPython.display.Javascript('google.colab.kernel.restart()'))
+# Verify transformers is healthy before proceeding
+import transformers, torch
+print(f"transformers {transformers.__version__}  |  torch {torch.__version__}  |  GPU: {torch.cuda.is_available()}")
+# Should print something like: transformers 4.47.x | torch 2.x | GPU: True
+# If GPU: False → Runtime → Change runtime type → T4 GPU
 
 # %% Cell 2 — Syllable + character data
 # 50 syllables that have all 4 tones in common Mandarin words.
