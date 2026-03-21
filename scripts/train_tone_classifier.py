@@ -402,57 +402,40 @@ model.save_pretrained(SAVE_DIR)
 feature_extractor.save_pretrained(SAVE_DIR)
 print(f"Saved to {SAVE_DIR}")
 
-# %% Cell 11 — Export to ONNX
-import subprocess
-subprocess.run(['pip', 'install', '-q', 'onnxscript'], check=True)
-import torch.onnx
-
-model.eval()
-model.cpu()
-
-# Dummy input: 3 seconds of silence at 16kHz
-dummy_input = torch.zeros(1, MAX_LENGTH)
-
-ONNX_PATH = '/content/tone_classifier.onnx'
-
-torch.onnx.export(
-    model,
-    (dummy_input,),
-    ONNX_PATH,
-    input_names=['input_values'],
-    output_names=['logits'],
-    dynamic_axes={
-        'input_values': {0: 'batch', 1: 'sequence'},
-        'logits': {0: 'batch'},
-    },
-    opset_version=14,
-    do_constant_folding=True,
-)
-
+# %% Cell 11 — Export to ONNX + INT8 quantize via optimum
+# optimum handles HuBERT shape inference correctly (torch.onnx.export does not)
+from optimum.onnxruntime import ORTModelForAudioClassification
+from optimum.onnxruntime.configuration import AutoQuantizationConfig
+from optimum.onnxruntime import ORTQuantizer
 import os
+
+ONNX_DIR  = '/content/onnx_fp32'
+QUANT_DIR = '/content/onnx_int8'
+ONNX_PATH = os.path.join(ONNX_DIR, 'model.onnx')
+QUANT_PATH = os.path.join(QUANT_DIR, 'model_quantized.onnx')
+
+# Export: loads the saved HF model and converts to ONNX
+print("Exporting to ONNX via optimum...")
+ort_model = ORTModelForAudioClassification.from_pretrained(SAVE_DIR, export=True)
+ort_model.save_pretrained(ONNX_DIR)
 size_mb = os.path.getsize(ONNX_PATH) / 1024 / 1024
-print(f"ONNX exported: {ONNX_PATH} ({size_mb:.1f} MB)")
+print(f"FP32 ONNX: {ONNX_PATH} ({size_mb:.1f} MB)")
 
-# %% Cell 12 — INT8 Quantize
-import onnx
-from onnxruntime.quantization import quantize_dynamic, QuantType
-
-QUANT_PATH = '/content/tone_classifier_int8.onnx'
-
-quantize_dynamic(
-    ONNX_PATH,
-    QUANT_PATH,
-    weight_type=QuantType.QInt8,
-)
-
+# INT8 dynamic quantization
+print("Quantizing to INT8...")
+quantizer = ORTQuantizer.from_pretrained(ONNX_DIR)
+qconfig = AutoQuantizationConfig.avx512_vnni(is_static=False, per_channel=False)
+quantizer.quantize(save_dir=QUANT_DIR, quantization_config=qconfig)
 size_mb_q = os.path.getsize(QUANT_PATH) / 1024 / 1024
-print(f"INT8 quantized: {QUANT_PATH} ({size_mb_q:.1f} MB)")
+print(f"INT8 ONNX: {QUANT_PATH} ({size_mb_q:.1f} MB)")
 
 # %% Cell 13 — Validate ONNX model
 import onnxruntime as ort
 import numpy as np
 
 sess = ort.InferenceSession(QUANT_PATH, providers=['CPUExecutionProvider'])
+print(f"Input:  {sess.get_inputs()[0].name}  {sess.get_inputs()[0].shape}")
+print(f"Output: {sess.get_outputs()[0].name}  {sess.get_outputs()[0].shape}")
 
 # Test each tone with a sample from the validation set
 print("ONNX validation (sample predictions):")
@@ -477,10 +460,10 @@ for tone in range(4):
 # %% Cell 14 — Download
 from google.colab import files
 
-# Download the INT8 model (put in justfortones-web/public/models/)
+# INT8 model — put this in justfortones-web/public/models/tone_classifier.onnx
 files.download(QUANT_PATH)
 
-# Also download FP32 for reference
+# FP32 backup (larger but guaranteed to work if INT8 has issues)
 files.download(ONNX_PATH)
 
 print("""
