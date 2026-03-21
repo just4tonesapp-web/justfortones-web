@@ -117,10 +117,22 @@ VOICES = [
     'zh-TW-YunJheNeural',     # male, Taiwan
 ]
 
-async def generate_one(char, voice, out_path):
-    """Generate TTS audio for a single Chinese character."""
-    communicate = edge_tts.Communicate(char, voice, rate='-10%')  # slightly slower = clearer tones
-    await communicate.save(out_path)
+async def generate_one(char, voice, out_path, retries=3):
+    """Generate TTS for one character with retries. Returns True on success."""
+    for attempt in range(retries):
+        try:
+            communicate = edge_tts.Communicate(char, voice, rate='-10%')
+            await communicate.save(out_path)
+            # Verify file has actual content (>1KB means audio received)
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 1024:
+                return True
+            if os.path.exists(out_path):
+                os.remove(out_path)
+        except Exception:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+        await asyncio.sleep(0.3 * (attempt + 1))  # back-off
+    return False
 
 async def generate_all():
     metadata = []
@@ -128,32 +140,54 @@ async def generate_all():
 
     for syllable, chars in SYLLABLE_CHARS.items():
         for tone_idx, char in enumerate(chars):
-            tone = tone_idx + 1  # 1-indexed
+            tone = tone_idx + 1
             for voice_idx, voice in enumerate(VOICES):
                 fname = f"{syllable}_t{tone}_v{voice_idx}.mp3"
                 out_path = os.path.join(DATA_DIR, fname)
-                if not os.path.exists(out_path):
-                    tasks.append((char, voice, out_path))
+                if not os.path.exists(out_path) or os.path.getsize(out_path) < 1024:
+                    tasks.append((char, voice, out_path, syllable, tone, voice_idx))
+
+    print(f"Generating {len(tasks)} audio files...")
+    failed = 0
+
+    # Small batches with delay to avoid rate limiting
+    batch_size = 20
+    for i in range(0, len(tasks), batch_size):
+        batch = tasks[i:i+batch_size]
+        results = await asyncio.gather(*[
+            generate_one(char, voice, path)
+            for char, voice, path, *_ in batch
+        ])
+        for j, ok in enumerate(results):
+            char, voice, path, syllable, tone, voice_idx = batch[j]
+            if ok:
                 metadata.append({
-                    'file': fname,
+                    'file': path,
                     'syllable': syllable,
                     'tone': tone,
                     'char': char,
                     'voice': voice_idx,
                 })
+            else:
+                failed += 1
+        print(f"  {min(i+batch_size, len(tasks))}/{len(tasks)} processed | failed so far: {failed}")
+        await asyncio.sleep(0.5)  # pause between batches
 
-    print(f"Generating {len(tasks)} audio files (skipping {len(metadata)-len(tasks)} existing)...")
-
-    # Run in batches to avoid rate limiting
-    batch_size = 50
-    for i in range(0, len(tasks), batch_size):
-        batch = tasks[i:i+batch_size]
-        await asyncio.gather(*[generate_one(c, v, p) for c, v, p in batch])
-        print(f"  {min(i+batch_size, len(tasks))}/{len(tasks)} done")
+    # Also add already-existing files from a previous run
+    for syllable, chars in SYLLABLE_CHARS.items():
+        for tone_idx, char in enumerate(chars):
+            tone = tone_idx + 1
+            for voice_idx, voice in enumerate(VOICES):
+                fname = f"{syllable}_t{tone}_v{voice_idx}.mp3"
+                out_path = os.path.join(DATA_DIR, fname)
+                already = {'file': out_path, 'syllable': syllable, 'tone': tone,
+                           'char': char, 'voice': voice_idx}
+                if already not in metadata and os.path.exists(out_path) and os.path.getsize(out_path) > 1024:
+                    metadata.append(already)
 
     with open(os.path.join(DATA_DIR, 'metadata.json'), 'w') as f:
         json.dump(metadata, f)
-    print(f"Generated {len(metadata)} total samples")
+    print(f"\nDone: {len(metadata)} succeeded, {failed} failed (skipped)")
     return metadata
 
 metadata = await generate_all()
@@ -178,7 +212,7 @@ augment = Compose([
 wav_metadata = []
 
 for item in metadata:
-    mp3_path = os.path.join(DATA_DIR, item['file'])
+    mp3_path = item['file'] if os.path.isabs(item['file']) else os.path.join(DATA_DIR, item['file'])
     if not os.path.exists(mp3_path):
         continue
 
@@ -192,7 +226,7 @@ for item in metadata:
     audio = audio / (np.abs(audio).max() + 1e-8)
 
     # Save original
-    base = item['file'].replace('.mp3', '')
+    base = os.path.splitext(os.path.basename(mp3_path))[0]
     wav_path = os.path.join(WAV_DIR, f"{base}_orig.wav")
     sf.write(wav_path, audio, 16000)
     wav_metadata.append({'file': wav_path, 'tone': item['tone'] - 1})  # 0-indexed label
