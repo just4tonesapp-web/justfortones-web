@@ -1,33 +1,33 @@
 """
 train_tone_classifier.py
 ========================
-Colab notebook to fine-tune DistilHuBERT for Mandarin tone classification (tones 1–4).
+Colab notebook to fine-tune DistilHuBERT for Mandarin tone classification (tones 1-4).
 Copy each cell (separated by # %%) into a new Colab notebook and run top-to-bottom.
 
-Runtime: GPU (Runtime → Change runtime type → T4 GPU)
+Runtime: GPU (Runtime -> Change runtime type -> T4 GPU)
 Time: ~45 min total (data gen 15min, training 20min, export 10min)
-Output: tone_classifier_int8.onnx (~24MB) — download and put in public/models/
+Output: tone_classifier.onnx (~90MB FP32) -- download and put in public/models/
 """
 
 # %% [markdown]
-# # Mandarin Tone Classifier — DistilHuBERT Fine-tuning
-# Trains a 4-class audio classifier (tones 1–4) using synthetic TTS data,
-# exports to ONNX INT8 for browser use with onnxruntime-web.
+# # Mandarin Tone Classifier -- DistilHuBERT Fine-tuning
+# Trains a 4-class audio classifier (tones 1-4) using synthetic TTS data,
+# exports to ONNX FP32 for browser use with onnxruntime-web.
 
-# %% Cell 1 — Install dependencies
-# Colab already has transformers, torch, torchaudio, librosa — don't reinstall them.
+# %% Cell 1 -- Install dependencies
+# Colab already has transformers, torch, torchaudio, librosa -- don't reinstall them.
 # Only install packages Colab is missing.
-!pip install -q edge-tts audiomentations evaluate optimum onnx soundfile
+!pip install -q edge-tts audiomentations evaluate onnx soundfile
 
 # Verify transformers is healthy before proceeding
 import transformers, torch
 print(f"transformers {transformers.__version__}  |  torch {torch.__version__}  |  GPU: {torch.cuda.is_available()}")
 # Should print something like: transformers 4.47.x | torch 2.x | GPU: True
-# If GPU: False → Runtime → Change runtime type → T4 GPU
+# If GPU: False -> Runtime -> Change runtime type -> T4 GPU
 
-# %% Cell 2 — Syllable + character data
-# 50 syllables that have all 4 tones in common Mandarin words.
-# Each entry: syllable → [T1_char, T2_char, T3_char, T4_char]
+# %% Cell 2 -- Syllable + character data
+# 60 syllables that have all 4 tones in common Mandarin words.
+# Each entry: syllable -> [T1_char, T2_char, T3_char, T4_char]
 
 SYLLABLE_CHARS = {
     'ma':   ['妈', '麻', '马', '骂'],
@@ -96,7 +96,7 @@ SYLLABLE_CHARS = {
 print(f"Total syllables: {len(SYLLABLE_CHARS)}")
 print(f"Total samples before augment: {len(SYLLABLE_CHARS) * 4} per voice")
 
-# %% Cell 3 — Generate TTS audio with edge-tts
+# %% Cell 3 -- Generate TTS audio with edge-tts
 import asyncio
 import edge_tts
 import os, json
@@ -190,7 +190,7 @@ async def generate_all():
 
 metadata = await generate_all()
 
-# %% Cell 4 — Convert MP3 → WAV at 16kHz, apply augmentation
+# %% Cell 4 -- Convert MP3 -> WAV at 16kHz, apply augmentation
 import librosa
 import soundfile as sf
 import numpy as np
@@ -243,7 +243,7 @@ from collections import Counter
 dist = Counter(m['tone'] for m in wav_metadata)
 print("Tone distribution:", {f'T{k+1}': v for k, v in sorted(dist.items())})
 
-# %% Cell 5 — Build HuggingFace Dataset
+# %% Cell 5 -- Build HuggingFace Dataset
 import torch
 import torchaudio
 from datasets import Dataset, DatasetDict, Audio
@@ -278,7 +278,7 @@ ds = DatasetDict({
 })
 print(ds)
 
-# %% Cell 6 — Load DistilHuBERT + feature extractor
+# %% Cell 6 -- Load DistilHuBERT + feature extractor
 from transformers import AutoFeatureExtractor, AutoModelForAudioClassification
 
 MODEL_ID = 'ntu-spml/distilhubert'
@@ -299,8 +299,8 @@ model = AutoModelForAudioClassification.from_pretrained(
 print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 print(f"Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
 
-# %% Cell 7 — Preprocess: extract features
-MAX_DURATION = 3.0  # seconds — clip/pad all audio to 3s
+# %% Cell 7 -- Preprocess: extract features
+MAX_DURATION = 3.0  # seconds -- clip/pad all audio to 3s
 MAX_LENGTH = int(MAX_DURATION * 16000)
 
 def preprocess(batch):
@@ -338,7 +338,7 @@ ds_processed.set_format('torch')
 print("Processed dataset:")
 print(ds_processed)
 
-# %% Cell 8 — Train
+# %% Cell 8 -- Train
 from transformers import TrainingArguments, Trainer
 import evaluate
 
@@ -376,7 +376,7 @@ trainer = Trainer(
 
 trainer.train()
 
-# %% Cell 9 — Evaluate final accuracy
+# %% Cell 9 -- Evaluate final accuracy
 log = trainer.state.log_history
 eval_entries = [e for e in log if 'eval_accuracy' in e]
 best = max(eval_entries, key=lambda e: e['eval_accuracy']) if eval_entries else {}
@@ -396,22 +396,20 @@ with torch.no_grad():
 print("\nPer-tone accuracy:")
 [print(f"  Tone {t+1}: {correct[t]}/{total[t]} = {correct[t]/total[t]*100:.1f}%") for t in range(4)]
 
-# %% Cell 10 — Save fine-tuned model
+# %% Cell 10 -- Save fine-tuned model
 SAVE_DIR = '/content/tone_model_final'
 model.save_pretrained(SAVE_DIR)
 feature_extractor.save_pretrained(SAVE_DIR)
 print(f"Saved to {SAVE_DIR}")
 
-# %% Cell 11 — Export to ONNX
-# Wrap model to return plain tensor — required for legacy TorchScript tracer
-import torch, torch.nn as nn, os
+# %% Cell 11 -- Export to ONNX (FP32)
+import torch, torch.nn as nn, os, onnx
 
 class ToneWrapper(nn.Module):
     def __init__(self, m): super().__init__(); self.m = m
     def forward(self, x): return self.m(x).logits
 
 ONNX_PATH = '/content/tone_classifier.onnx'
-QUANT_PATH = '/content/tone_classifier_int8.onnx'
 
 wrapper = ToneWrapper(model).eval().cpu()
 dummy = torch.zeros(1, MAX_LENGTH)
@@ -426,74 +424,56 @@ with torch.no_grad():
         do_constant_folding=True,
     )
 
+# If PyTorch wrote external data, inline it into a single file
+data_file = ONNX_PATH + '.data'
+if os.path.exists(data_file):
+    print("Inlining external data...")
+    proto = onnx.load(ONNX_PATH)
+    onnx.external_data_helper.load_external_data_for_model(proto, '/content')
+    onnx.save(proto, ONNX_PATH, save_as_external_data=False)
+
 size_mb = os.path.getsize(ONNX_PATH) / 1024 / 1024
-print(f"FP32 ONNX: {size_mb:.1f} MB")
-assert size_mb > 10, f"Export failed — model is only {size_mb:.1f} MB (expected ~90 MB)"
+print(f"ONNX exported: {size_mb:.1f} MB")
+if size_mb < 10:
+    raise RuntimeError(f"Export looks wrong -- only {size_mb:.1f} MB. Expected ~90 MB.")
 
-# INT8 quantize (try MatMul-only; fall back to FP32 if shape inference fails)
-from onnxruntime.quantization import quantize_dynamic, QuantType
-try:
-    quantize_dynamic(ONNX_PATH, QUANT_PATH, weight_type=QuantType.QInt8, op_types_to_quantize=['MatMul'])
-    print(f"INT8 ONNX: {os.path.getsize(QUANT_PATH)/1024/1024:.1f} MB")
-except Exception as e:
-    print(f"Quantization failed ({e}) — using FP32 model instead")
-    import shutil; shutil.copy(ONNX_PATH, QUANT_PATH)
-
-# %% Cell 13 — Validate ONNX model
+# %% Cell 12 -- Validate ONNX model
 import onnxruntime as ort
-import numpy as np
 
-sess = ort.InferenceSession(QUANT_PATH, providers=['CPUExecutionProvider'])
-inp = sess.get_inputs()[0]
-out = sess.get_outputs()[0]
-print(f"Input:  {inp.name}  {inp.shape}  {inp.type}")
-print(f"Output: {out.name}  {out.shape}  {out.type}")
+sess = ort.InferenceSession(ONNX_PATH, providers=['CPUExecutionProvider'])
+ort_input = sess.get_inputs()[0]
+ort_output = sess.get_outputs()[0]
+print(f"Input:  {ort_input.name}  {ort_input.shape}  {ort_input.type}")
+print(f"Output: {ort_output.name}  {ort_output.shape}  {ort_output.type}")
 
-# Test each tone with a sample from the validation set
-print("ONNX validation (sample predictions):")
+print("\nONNX validation (sample predictions):")
 for tone in range(4):
     tone_items = [m for m in val_items if m['tone'] == tone][:3]
     for item in tone_items:
         audio, sr = librosa.load(item['file'], sr=16000, mono=True)
-        # Pad/truncate
         if len(audio) > MAX_LENGTH:
             audio = audio[:MAX_LENGTH]
         else:
             audio = np.pad(audio, (0, MAX_LENGTH - len(audio)))
-        # Normalize (feature extractor does this; replicate it)
+        # Normalize the same way the feature extractor does
         audio = (audio - audio.mean()) / (audio.std() + 1e-8)
-        inp = audio[np.newaxis, :].astype(np.float32)
-        logits = sess.run(None, {'input_values': inp})[0][0]
+        x = audio[np.newaxis, :].astype(np.float32)
+        logits = sess.run(None, {'input_values': x})[0][0]
         pred = np.argmax(logits) + 1
         conf = int(np.exp(logits[np.argmax(logits)]) / np.exp(logits).sum() * 100)
         status = '✓' if pred == tone + 1 else '✗'
-        print(f"  T{tone+1} → pred T{pred} ({conf}%) {status}")
+        print(f"  T{tone+1} -> pred T{pred} ({conf}%) {status}")
 
-# %% Cell 14 — Download
+# %% Cell 13 -- Download
 from google.colab import files
 
-# INT8 model — put this in justfortones-web/public/models/tone_classifier.onnx
-files.download(QUANT_PATH)
-
-# FP32 backup (larger but guaranteed to work if INT8 has issues)
+# Put this file in justfortones-web/public/models/tone_classifier.onnx
 files.download(ONNX_PATH)
 
 print("""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Done! Next steps:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. Copy tone_classifier_int8.onnx → public/models/tone_classifier.onnx
-
-2. In src/utils/models/toneClassifierModel.js (new file):
-   - Load with onnxruntime-web
-   - Input: Float32Array [1, 48000] (3s at 16kHz, normalized)
-   - Output: logits [1, 4] → softmax → tone 1-4
-
-3. In toneDetector.js:
-   - Re-enable with weight 0.85
-   - Replace ToneNet with new model
-
-Expected accuracy: 85-90% on real speech
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Done! Next steps:
+1. Copy tone_classifier.onnx -> public/models/tone_classifier.onnx
+2. Wire into JS app (toneClassifierModel.js + toneDetector.js)
+   Input:  Float32Array [1, 48000]  (3s at 16kHz, zero-mean unit-variance)
+   Output: logits [1, 4] -> argmax -> tone 1-4
 """)

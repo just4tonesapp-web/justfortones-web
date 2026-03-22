@@ -14,11 +14,13 @@ import { detectToneWithPitch, getPitchContour } from './models/pitchModel.js'
 import { loadWhisper, detectToneWithWhisper } from './models/whisperModel.js'
 import { loadToneNet, detectToneWithToneNet } from './models/tonetModel.js'
 import { loadSenseVoice, detectToneWithSenseVoice } from './models/sensevoiceModel.js'
+import { loadToneClassifier, detectToneWithClassifier } from './models/toneClassifierModel.js'
 
 const MODEL_WEIGHTS = {
+  classifier: 0.60, // DistilHuBERT fine-tuned on Mandarin tones (real-speech weight, TTS-trained)
   tonenet:    0.99,
   sensevoice: 0.92,
-  whisper:    0.60, // restored — ToneNet disabled, Whisper is now best available ASR model
+  whisper:    0.60,
   pitch:      0.55,
 }
 
@@ -54,8 +56,9 @@ export class ToneDetector {
     }
 
     // All load in parallel — stubs fail instantly, real models load async
-    // ToneNet disabled: always outputs T4 regardless of input (model export bug)
+    // ToneNet disabled: always outputs T4 regardless of input (domain shift)
     await Promise.allSettled([
+      load('classifier', loadToneClassifier),
       load('whisper', () => loadWhisper((status, pct) => onStatus?.('whisper', status, pct))),
       // load('tonenet', loadToneNet),
       load('sensevoice', loadSenseVoice),
@@ -94,6 +97,15 @@ export class ToneDetector {
         .then(tone => tone !== null ? { model: 'pitch', tone, weight: MODEL_WEIGHTS.pitch } : null)
         .catch(() => null)
     )
+
+    // ── ToneClassifier (DistilHuBERT fine-tuned) ──
+    if (this.loaded.classifier) {
+      jobs.push(
+        detectToneWithClassifier(samples, sampleRate)
+          .then(tone => tone !== null ? { model: 'classifier', tone, weight: MODEL_WEIGHTS.classifier } : null)
+          .catch(() => null)
+      )
+    }
 
     // ── Whisper ──
     if (this.loaded.whisper) {

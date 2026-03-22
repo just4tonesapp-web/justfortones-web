@@ -13,6 +13,16 @@ import { getMelSpectrogramImage } from '../utils/models/tonetModel.js'
 const TOTAL = 12
 const PASS_SCORE = 10
 
+const JUDGE_PERSONAS = {
+  classifier: { emoji: '🤖', name: 'ToneBot' },
+  whisper:    { emoji: '🦉', name: 'Whisperer' },
+  pitch:      { emoji: '🎵', name: 'Maestro' },
+  tonenet:    { emoji: '🔬', name: 'Lab' },
+  sensevoice: { emoji: '👂', name: 'Sensei' },
+}
+
+const TONE_ARROWS = { 1: '‾', 2: '↗', 3: '↘↗', 4: '↘' }
+
 // Characters with known tones for Test C (single characters with pinyin)
 const CHAR_POOL = [
   { char: '妈', base: 'ma', tone: 1, meaning: 'mother' },
@@ -58,16 +68,20 @@ export function testCView(container) {
   })
 
   function updateModelStatus() {
-    const all = ['pitch', 'whisper', 'tonenet']
-    const icons = all.map(m => {
-      if (m === 'pitch') return '✓ pitch'
-      if (toneDetector.loaded[m]) return `✓ ${m}`
-      if (toneDetector.failed[m]) return `✗ ${m}`
-      if (toneDetector._loading[m]) return `⏳ ${m}`
-      return `— ${m}`
+    const judges = [
+      { name: 'pitch',      ...JUDGE_PERSONAS.pitch,      alwaysOn: true },
+      { name: 'classifier', ...JUDGE_PERSONAS.classifier },
+      { name: 'whisper',    ...JUDGE_PERSONAS.whisper },
+    ]
+    const parts = judges.map(j => {
+      if (j.alwaysOn || toneDetector.loaded[j.name]) return `${j.emoji} ${j.name}`
+      if (toneDetector.failed[j.name])               return `<span style="opacity:0.35">${j.emoji} ${j.name}</span>`
+      if (toneDetector._loading[j.name])             return `${j.emoji} ⏳`
+      return `<span style="opacity:0.35">${j.emoji} ${j.name}</span>`
     })
-    const text = icons.join('  ·  ')
-    document.querySelectorAll('#tc-model-status').forEach(el => el.textContent = text)
+    document.querySelectorAll('#tc-model-status').forEach(el => {
+      el.innerHTML = parts.join('  ·  ')
+    })
   }
 
   // Show initial state immediately
@@ -181,6 +195,7 @@ export function testCView(container) {
           <div class="tc-q-result hidden" id="tc-q-result">
             <div class="tc-q-score" id="tc-q-score">85%</div>
             <div class="tc-q-msg" id="tc-q-msg">Great match!</div>
+            <div id="tc-judges-wrap" class="hidden"></div>
             <button class="btn btn-primary" id="tc-next">Next →</button>
           </div>
         </div>
@@ -199,8 +214,24 @@ export function testCView(container) {
   const $ = (id) => document.getElementById(id)
   $('tc-start').addEventListener('click', startTest)
   $('tc-listen').addEventListener('click', listenExample)
-  $('tc-record').addEventListener('click', toggleRecord)
   $('tc-next').addEventListener('click', nextQuestion)
+
+  // Push-to-talk: press and hold to record, release to stop
+  const recBtn = $('tc-record')
+  function onRecordPress(e) {
+    e.preventDefault()
+    if (isRecording || recBtn.disabled) return
+    startRecording()
+  }
+  function onRecordRelease() {
+    if (!isRecording) return
+    stopRecording()
+  }
+  recBtn.addEventListener('mousedown', onRecordPress)
+  recBtn.addEventListener('touchstart', onRecordPress, { passive: false })
+  document.addEventListener('mouseup', onRecordRelease)
+  document.addEventListener('touchend', onRecordRelease)
+  document.addEventListener('touchcancel', onRecordRelease)
 
   function startTest() {
     generate()
@@ -224,7 +255,7 @@ export function testCView(container) {
     $('tc-meaning').textContent = q.meaning
 
     // Reset UI
-    $('tc-rec-label').textContent = 'Tap to Record'
+    $('tc-rec-label').textContent = 'Hold to Record'
     $('tc-rec-icon').textContent = '🎤'
     $('tc-rec-status').textContent = 'Ready'
     $('tc-record').classList.remove('recording')
@@ -233,6 +264,7 @@ export function testCView(container) {
     $('tc-contour-wrap').classList.add('hidden')
     $('tc-mel-wrap').classList.add('hidden')
     $('tc-q-result').classList.add('hidden')
+    $('tc-judges-wrap').classList.add('hidden')
     $('tc-listen').disabled = false
 
     // Re-animate
@@ -253,14 +285,6 @@ export function testCView(container) {
     })
   }
 
-  async function toggleRecord() {
-    if (isRecording) {
-      stopRecording()
-    } else {
-      startRecording()
-    }
-  }
-
   async function startRecording() {
     const ok = await engine.start()
     if (!ok) {
@@ -269,8 +293,8 @@ export function testCView(container) {
     }
 
     isRecording = true
-    $('tc-rec-label').textContent = 'Recording…'
-    $('tc-rec-icon').textContent = '⏹️'
+    $('tc-rec-label').textContent = 'Release to Stop'
+    $('tc-rec-icon').textContent = '🔴'
     $('tc-rec-status').textContent = 'Speak now!'
     $('tc-record').classList.add('recording')
     $('tc-listen').disabled = true
@@ -278,14 +302,14 @@ export function testCView(container) {
     // Level meter animation
     levelInterval = setInterval(() => {
       const rms = engine.getRMS()
-      const pct = Math.min(100, rms * 500) // scale up for visibility
+      const pct = Math.min(100, rms * 500)
       $('tc-level-bar').style.width = `${pct}%`
     }, 50)
 
-    // Auto-stop after 3 seconds
+    // Safety auto-stop at 8 seconds max
     recordTimer = setTimeout(() => {
       if (isRecording) stopRecording()
-    }, 3000)
+    }, 8000)
   }
 
   async function stopRecording() {
@@ -375,6 +399,7 @@ export function testCView(container) {
     }
     breakdownEl.textContent = modelBreakdown || 'pitch only'
 
+    renderJudges(ensemble.results, q.tone)
     $('tc-q-result').classList.remove('hidden')
     $('tc-prog-score').textContent = `Score: ${score}`
     showToast(passed)
@@ -455,6 +480,41 @@ export function testCView(container) {
       imageData.data[i * 4 + 3] = 255
     }
     ctx.putImageData(imageData, 0, 0)
+  }
+
+  function renderJudges(results, targetTone) {
+    const wrap = document.getElementById('tc-judges-wrap')
+    if (!wrap) return
+
+    const resultMap = {}
+    for (const r of results) resultMap[r.model] = r
+
+    // Always show all 3 judges — idle/greyed if they didn't participate
+    const shown = ['pitch', 'classifier', 'whisper']
+
+    const cards = shown.map(modelName => {
+      const persona = JUDGE_PERSONAS[modelName]
+      if (!persona) return ''
+      const r = resultMap[modelName]
+      const participated = !!r
+      const correct = participated && r.tone === targetTone
+      const stateClass = !participated ? 'judge-idle' : correct ? 'judge-correct' : 'judge-incorrect'
+      const voteText = participated ? `T${r.tone} ${TONE_ARROWS[r.tone]}` : '—'
+      const verdict = !participated ? '' : correct ? '✓' : '✗'
+      return `
+        <div class="tc-judge-card ${stateClass}">
+          <div class="tc-judge-avatar">${persona.emoji}</div>
+          <div class="tc-judge-name">${persona.name}</div>
+          <div class="tc-judge-vote">${voteText}</div>
+          <div class="tc-judge-verdict">${verdict}</div>
+        </div>`
+    }).join('')
+
+    wrap.innerHTML = `
+      <div class="tc-judges-label">What the judges heard</div>
+      <div class="tc-judges-row">${cards}</div>
+    `
+    wrap.classList.remove('hidden')
   }
 
   function showToast(ok) {
@@ -562,6 +622,9 @@ export function testCView(container) {
     if (isRecording) engine.stop()
     clearTimeout(recordTimer)
     clearInterval(levelInterval)
+    document.removeEventListener('mouseup', onRecordRelease)
+    document.removeEventListener('touchend', onRecordRelease)
+    document.removeEventListener('touchcancel', onRecordRelease)
   }
 }
 
@@ -764,10 +827,44 @@ const scopedCSS = `
 
   .report-actions { display: flex; gap: 12px; }
 
+  /* Judge panel */
+  .tc-judges-label {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-muted); text-align: center; margin: 14px 0 10px;
+  }
+  .tc-judges-row {
+    display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .tc-judge-card {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 10px 12px; border-radius: var(--radius-sm);
+    border: 1px solid var(--card-border);
+    background: var(--surface);
+    min-width: 72px;
+    transition: all 0.3s ease;
+  }
+  .tc-judge-card.judge-correct {
+    border-color: var(--correct);
+    background: var(--correct-bg, rgba(34,197,94,0.08));
+  }
+  .tc-judge-card.judge-incorrect {
+    border-color: var(--incorrect);
+    background: var(--incorrect-bg);
+  }
+  .tc-judge-card.judge-idle { opacity: 0.4; }
+  .tc-judge-avatar { font-size: 1.6rem; line-height: 1; }
+  .tc-judge-name { font-size: 0.68rem; color: var(--text-muted); font-weight: 600; }
+  .tc-judge-vote { font-size: 0.8rem; font-weight: 700; color: var(--text-primary); }
+  .tc-judge-verdict { font-size: 1rem; font-weight: 700; }
+  .judge-correct .tc-judge-verdict { color: var(--correct); }
+  .judge-incorrect .tc-judge-verdict { color: var(--incorrect); }
+
   @media (max-width: 480px) {
     .tc-record-btn { width: 120px; height: 120px; }
     .tc-big-char { font-size: 3rem; }
     .report-actions { flex-direction: column; }
     .tone-row-label { flex: 0 0 90px; }
+    .tc-judge-card { min-width: 62px; padding: 8px 8px; }
   }
 `
