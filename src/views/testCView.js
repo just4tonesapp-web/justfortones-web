@@ -61,6 +61,8 @@ export function testCView(container) {
   let isRecording = false
   let recordTimer = null
   let levelInterval = null
+  let silenceTimer = null
+  let hasSpeaking = false
 
   // Start loading models in the background immediately
   toneDetector.init((model, status, pct) => {
@@ -71,7 +73,6 @@ export function testCView(container) {
     const judges = [
       { name: 'pitch',      ...JUDGE_PERSONAS.pitch,      alwaysOn: true },
       { name: 'classifier', ...JUDGE_PERSONAS.classifier },
-      { name: 'whisper',    ...JUDGE_PERSONAS.whisper },
     ]
     const parts = judges.map(j => {
       if (j.alwaysOn || toneDetector.loaded[j.name]) return `${j.emoji} ${j.name}`
@@ -216,22 +217,9 @@ export function testCView(container) {
   $('tc-listen').addEventListener('click', listenExample)
   $('tc-next').addEventListener('click', nextQuestion)
 
-  // Push-to-talk: press and hold to record, release to stop
-  const recBtn = $('tc-record')
-  function onRecordPress(e) {
-    e.preventDefault()
-    if (isRecording || recBtn.disabled) return
-    startRecording()
-  }
-  function onRecordRelease() {
-    if (!isRecording) return
-    stopRecording()
-  }
-  recBtn.addEventListener('mousedown', onRecordPress)
-  recBtn.addEventListener('touchstart', onRecordPress, { passive: false })
-  document.addEventListener('mouseup', onRecordRelease)
-  document.addEventListener('touchend', onRecordRelease)
-  document.addEventListener('touchcancel', onRecordRelease)
+  $('tc-record').addEventListener('click', () => {
+    if (!isRecording && !$('tc-record').disabled) startRecording()
+  })
 
   function startTest() {
     generate()
@@ -255,7 +243,7 @@ export function testCView(container) {
     $('tc-meaning').textContent = q.meaning
 
     // Reset UI
-    $('tc-rec-label').textContent = 'Hold to Record'
+    $('tc-rec-label').textContent = 'Tap to Record'
     $('tc-rec-icon').textContent = '🎤'
     $('tc-rec-status').textContent = 'Ready'
     $('tc-record').classList.remove('recording')
@@ -293,28 +281,41 @@ export function testCView(container) {
     }
 
     isRecording = true
-    $('tc-rec-label').textContent = 'Release to Stop'
-    $('tc-rec-icon').textContent = '🔴'
+    hasSpeaking = false
+    silenceTimer = null
+    $('tc-rec-label').textContent = 'Listening…'
+    $('tc-rec-icon').textContent = '🎤'
     $('tc-rec-status').textContent = 'Speak now!'
     $('tc-record').classList.add('recording')
     $('tc-listen').disabled = true
 
-    // Level meter animation
+    // Level meter + silence detection
     levelInterval = setInterval(() => {
       const rms = engine.getRMS()
       const pct = Math.min(100, rms * 500)
       $('tc-level-bar').style.width = `${pct}%`
+
+      const speaking = rms > 0.015
+      if (speaking) {
+        hasSpeaking = true
+        if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null }
+        $('tc-rec-status').textContent = 'Speaking…'
+      } else if (hasSpeaking && !silenceTimer) {
+        // Speech detected, now silence — stop after 400ms
+        silenceTimer = setTimeout(() => { if (isRecording) stopRecording() }, 400)
+        $('tc-rec-status').textContent = 'Done? Stopping…'
+      }
     }, 50)
 
-    // Safety auto-stop at 8 seconds max
-    recordTimer = setTimeout(() => {
-      if (isRecording) stopRecording()
-    }, 8000)
+    // Safety max 6 seconds
+    recordTimer = setTimeout(() => { if (isRecording) stopRecording() }, 6000)
   }
 
   async function stopRecording() {
     clearTimeout(recordTimer)
+    clearTimeout(silenceTimer)
     clearInterval(levelInterval)
+    silenceTimer = null
     const recording = engine.stop()
     isRecording = false
 
@@ -489,8 +490,8 @@ export function testCView(container) {
     const resultMap = {}
     for (const r of results) resultMap[r.model] = r
 
-    // Always show all 3 judges — idle/greyed if they didn't participate
-    const shown = ['pitch', 'classifier', 'whisper']
+    // Show pitch + classifier (whisper disabled — GitHub Pages lacks COOP/COEP headers for SharedArrayBuffer)
+    const shown = ['pitch', 'classifier']
 
     const cards = shown.map(modelName => {
       const persona = JUDGE_PERSONAS[modelName]
@@ -621,10 +622,8 @@ export function testCView(container) {
   return () => {
     if (isRecording) engine.stop()
     clearTimeout(recordTimer)
+    clearTimeout(silenceTimer)
     clearInterval(levelInterval)
-    document.removeEventListener('mouseup', onRecordRelease)
-    document.removeEventListener('touchend', onRecordRelease)
-    document.removeEventListener('touchcancel', onRecordRelease)
   }
 }
 

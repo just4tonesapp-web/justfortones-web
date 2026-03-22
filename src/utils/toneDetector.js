@@ -17,7 +17,7 @@ import { loadSenseVoice, detectToneWithSenseVoice } from './models/sensevoiceMod
 import { loadToneClassifier, detectToneWithClassifier } from './models/toneClassifierModel.js'
 
 const MODEL_WEIGHTS = {
-  classifier: 0.60, // DistilHuBERT fine-tuned on Mandarin tones (real-speech weight, TTS-trained)
+  classifier: 0.40, // DistilHuBERT fine-tuned on Mandarin tones — TTS-trained, T2 bias on real mic
   tonenet:    0.99,
   sensevoice: 0.92,
   whisper:    0.60,
@@ -56,10 +56,11 @@ export class ToneDetector {
     }
 
     // All load in parallel — stubs fail instantly, real models load async
-    // ToneNet disabled: always outputs T4 regardless of input (domain shift)
+    // ToneNet disabled: always outputs T4 (domain shift)
+    // Whisper disabled: requires SharedArrayBuffer — GitHub Pages doesn't send COOP/COEP headers
     await Promise.allSettled([
       load('classifier', loadToneClassifier),
-      load('whisper', () => loadWhisper((status, pct) => onStatus?.('whisper', status, pct))),
+      // load('whisper', () => loadWhisper((status, pct) => onStatus?.('whisper', status, pct))),
       // load('tonenet', loadToneNet),
       load('sensevoice', loadSenseVoice),
     ])
