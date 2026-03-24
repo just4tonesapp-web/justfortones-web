@@ -17,15 +17,15 @@ import { loadSenseVoice, detectToneWithSenseVoice } from './models/sensevoiceMod
 import { loadToneClassifier, detectToneWithClassifier } from './models/toneClassifierModel.js'
 import { loadWebSpeech, detectToneFromText } from './models/webSpeechModel.js'
 import { loadGroq, detectToneWithGroq } from './models/groqModel.js'
+import { loadDeepgram, detectToneWithDeepgram } from './models/deepgramModel.js'
 
 const MODEL_WEIGHTS = {
-  groq:       0.90,
-  webSpeech:  0.85,
-  classifier: 0.40,
-  tonenet:    0.99,
-  sensevoice: 0.92,
-  whisper:    0.60,
-  pitch:      0.55,
+  groq:       1.50,   // Tier 1: cloud ASR (highest accuracy)
+  deepgram:   1.20,   // Tier 1: cloud ASR
+  sensevoice: 1.00,   // Tier 2: in-browser ASR (stub, not yet active)
+  whisper:    0.50,   // Tier 2: in-browser ASR
+  pitch:      0.35,   // Tier 3: signal-based
+  classifier: 0.20,   // Tier 3: signal-based (low accuracy)
 }
 
 export class ToneDetector {
@@ -64,6 +64,7 @@ export class ToneDetector {
     await Promise.allSettled([
       // load('webSpeech', loadWebSpeech),
       load('groq', loadGroq),
+      load('deepgram', loadDeepgram),
       load('classifier', loadToneClassifier),
       load('whisper', () => loadWhisper((status, pct) => onStatus?.('whisper', status, pct))),
       // load('tonenet', loadToneNet),
@@ -117,6 +118,15 @@ export class ToneDetector {
       jobs.push(
         detectToneWithGroq(samples, sampleRate, targetBase)
           .then(tone => tone !== null ? { model: 'groq', tone, weight: MODEL_WEIGHTS.groq } : null)
+          .catch(() => null)
+      )
+    }
+
+    // ── Deepgram Nova-2 ──
+    if (this.loaded.deepgram) {
+      jobs.push(
+        detectToneWithDeepgram(samples, sampleRate, targetBase)
+          .then(tone => tone !== null ? { model: 'deepgram', tone, weight: MODEL_WEIGHTS.deepgram } : null)
           .catch(() => null)
       )
     }
@@ -184,11 +194,22 @@ export class ToneDetector {
       totalWeight += r.weight
     }
 
-    // Winner = highest weighted score
+    // Groq override: if Groq's weight exceeds 40% of total voting weight, trust it
+    const groqResult = results.find(r => r.model === 'groq')
+    if (groqResult && (groqResult.weight / totalWeight) > 0.40) {
+      const agreeing = results.filter(r => r.tone === groqResult.tone).length
+      return {
+        tone: groqResult.tone,
+        confidence: Math.round((groqResult.weight / totalWeight) * 100),
+        agreement: Math.round((agreeing / results.length) * 100),
+        scores,
+      }
+    }
+
+    // Normal weighted vote: highest weighted score wins
     const tone = parseInt(Object.entries(scores).sort((a, b) => b[1] - a[1])[0][0])
     const confidence = Math.round((scores[tone] / totalWeight) * 100)
 
-    // Agreement = fraction of models that picked the winning tone
     const agreeing = results.filter(r => r.tone === tone).length
     const agreement = Math.round((agreeing / results.length) * 100)
 
