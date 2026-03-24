@@ -86,6 +86,7 @@ export function homeView(container) {
           <div class="step-lock">🔒</div>
         </button>
       </div>
+
     </div>
   `
 

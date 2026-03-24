@@ -4,8 +4,7 @@
 // Sends recorded audio as WAV to Groq's Whisper-large-v3 endpoint,
 // gets Chinese text back, looks up tone via CHAR_TONE_MAP.
 //
-// API key stored in localStorage (never baked into build bundle).
-// Set via browser console: localStorage.setItem('j4t_groq_key', 'gsk_...')
+// Requires VITE_GROQ_API_KEY in .env.local (baked into build at deploy time)
 // Free tier: generous limits. Cost after: ~$0.006/min
 // ═══════════════════════════════════════
 
@@ -15,12 +14,12 @@ const GROQ_API_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 let apiKey = null
 
 /**
- * "Load" = check for API key in localStorage. Throws if not configured.
+ * "Load" = validate API key exists. Throws if not configured.
  */
 export async function loadGroq() {
-  apiKey = localStorage.getItem('j4t_groq_key')
+  apiKey = import.meta.env.VITE_GROQ_API_KEY
   if (!apiKey) {
-    throw new Error('Groq API key not set — run: localStorage.setItem("j4t_groq_key", "gsk_...")')
+    throw new Error('VITE_GROQ_API_KEY not configured in .env.local')
   }
 }
 
