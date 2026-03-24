@@ -4,11 +4,11 @@
 // Runs all available models in parallel, combines results
 // via weighted vote based on known model accuracy.
 //
-// Model weights (from published accuracy):
-//   ToneNet     0.99  (Interspeech 2019 CNN, ~99%)
-//   SenseVoice  0.92  (Alibaba ASR, ~90-95%)
-//   Whisper     0.75  (OpenAI ASR, ~70-80% on single syllables)
-//   Pitch       0.55  (Improved YIN/ACF2PLUS, ~55-65%)
+// Tiered model weights:
+//   Tier 1 (cloud ASR):    Groq 1.50, Deepgram 1.20
+//   Tier 2 (browser ASR):  SenseVoice 1.00, Whisper 0.50
+//   Tier 3 (signal-based): Pitch 0.35, Classifier 0.20
+// Groq override: if Groq's weight > 40% of total, trust it directly
 // ═══════════════════════════════════════
 import { detectToneWithPitch, getPitchContour } from './models/pitchModel.js'
 import { loadWhisper, detectToneWithWhisper } from './models/whisperModel.js'
@@ -105,14 +105,6 @@ export class ToneDetector {
         .catch(() => null)
     )
 
-    // ── Web Speech API (result passed in from testCView) ──
-    if (this.loaded.webSpeech && webSpeechText) {
-      const tone = detectToneFromText(webSpeechText, targetBase)
-      if (tone) {
-        jobs.push(Promise.resolve({ model: 'webSpeech', tone, weight: MODEL_WEIGHTS.webSpeech }))
-      }
-    }
-
     // ── Groq Whisper API ──
     if (this.loaded.groq) {
       jobs.push(
@@ -145,15 +137,6 @@ export class ToneDetector {
       jobs.push(
         detectToneWithWhisper(samples, sampleRate, targetBase)
           .then(tone => tone !== null ? { model: 'whisper', tone, weight: MODEL_WEIGHTS.whisper } : null)
-          .catch(() => null)
-      )
-    }
-
-    // ── ToneNet ──
-    if (this.loaded.tonenet) {
-      jobs.push(
-        detectToneWithToneNet(samples, sampleRate)
-          .then(tone => tone !== null ? { model: 'tonenet', tone, weight: MODEL_WEIGHTS.tonenet } : null)
           .catch(() => null)
       )
     }
