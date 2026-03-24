@@ -15,9 +15,13 @@ import { loadWhisper, detectToneWithWhisper } from './models/whisperModel.js'
 import { loadToneNet, detectToneWithToneNet } from './models/tonetModel.js'
 import { loadSenseVoice, detectToneWithSenseVoice } from './models/sensevoiceModel.js'
 import { loadToneClassifier, detectToneWithClassifier } from './models/toneClassifierModel.js'
+import { loadWebSpeech, detectToneFromText } from './models/webSpeechModel.js'
+import { loadGroq, detectToneWithGroq } from './models/groqModel.js'
 
 const MODEL_WEIGHTS = {
-  classifier: 0.40, // DistilHuBERT fine-tuned on Mandarin tones — TTS-trained, T2 bias on real mic
+  groq:       0.90,
+  webSpeech:  0.85,
+  classifier: 0.40,
   tonenet:    0.99,
   sensevoice: 0.92,
   whisper:    0.60,
@@ -59,6 +63,8 @@ export class ToneDetector {
     // ToneNet disabled: always outputs T4 (domain shift)
     // Whisper disabled: requires SharedArrayBuffer — GitHub Pages doesn't send COOP/COEP headers
     await Promise.allSettled([
+      load('webSpeech', loadWebSpeech),
+      load('groq', loadGroq),
       load('classifier', loadToneClassifier),
       // load('whisper', () => loadWhisper((status, pct) => onStatus?.('whisper', status, pct))),
       // load('tonenet', loadToneNet),
@@ -86,7 +92,7 @@ export class ToneDetector {
    *   userContour: number[] // pitch contour for canvas (5 points, 1-5 scale)
    * }>}
    */
-  async detect({ samples, sampleRate }, targetBase = null) {
+  async detect({ samples, sampleRate }, targetBase = null, { webSpeechText = null } = {}) {
     // Trim leading/trailing silence so models see only the voiced syllable
     samples = trimSilence(samples, sampleRate)
     const jobs = []
@@ -98,6 +104,23 @@ export class ToneDetector {
         .then(tone => tone !== null ? { model: 'pitch', tone, weight: MODEL_WEIGHTS.pitch } : null)
         .catch(() => null)
     )
+
+    // ── Web Speech API (result passed in from testCView) ──
+    if (this.loaded.webSpeech && webSpeechText) {
+      const tone = detectToneFromText(webSpeechText, targetBase)
+      if (tone) {
+        jobs.push(Promise.resolve({ model: 'webSpeech', tone, weight: MODEL_WEIGHTS.webSpeech }))
+      }
+    }
+
+    // ── Groq Whisper API ──
+    if (this.loaded.groq) {
+      jobs.push(
+        detectToneWithGroq(samples, sampleRate, targetBase)
+          .then(tone => tone !== null ? { model: 'groq', tone, weight: MODEL_WEIGHTS.groq } : null)
+          .catch(() => null)
+      )
+    }
 
     // ── ToneClassifier (DistilHuBERT fine-tuned) ──
     if (this.loaded.classifier) {
