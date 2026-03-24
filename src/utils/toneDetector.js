@@ -51,9 +51,7 @@ export class ToneDetector {
         })
         .catch(e => {
           this.failed[name] = true
-          if (!e.message?.includes('not yet available') && !e.message?.includes('ONNX model not exported')) {
-            console.warn(`[ToneDetector] ${name} failed:`, e.message)
-          }
+          console.warn(`[ToneDetector] ${name} failed:`, e.message || e)
           onStatus?.(name, 'unavailable', 0)
         })
       return this._loading[name]
@@ -61,9 +59,10 @@ export class ToneDetector {
 
     // All load in parallel — stubs fail instantly, real models load async
     // ToneNet disabled: always outputs T4 (domain shift)
-    // Whisper: requires SharedArrayBuffer — works on localhost, may fail on GitHub Pages
+    // WebSpeech disabled: coi-serviceworker's COOP header blocks Web Speech API
+    // Whisper: requires SharedArrayBuffer via coi-serviceworker
     await Promise.allSettled([
-      load('webSpeech', loadWebSpeech),
+      // load('webSpeech', loadWebSpeech),
       load('groq', loadGroq),
       load('classifier', loadToneClassifier),
       load('whisper', () => loadWhisper((status, pct) => onStatus?.('whisper', status, pct))),
