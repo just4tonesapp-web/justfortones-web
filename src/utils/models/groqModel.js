@@ -24,6 +24,18 @@ export async function loadGroq() {
 }
 
 /**
+ * Build a prompt hint string from CHAR_TONE_MAP for a given base syllable.
+ * e.g. buildPromptHint('ma') → '妈麻马骂'
+ */
+function buildPromptHint(targetBase) {
+  if (!targetBase) return null
+  const chars = Object.entries(CHAR_TONE_MAP)
+    .filter(([, entry]) => entry.base === targetBase && entry.tone !== 5)
+    .map(([char]) => char)
+  return chars.length > 0 ? chars.join('') : null
+}
+
+/**
  * Detect tone by sending audio to Groq Whisper API.
  * @param {Float32Array} samples - raw audio at any sample rate
  * @param {number} sampleRate
@@ -45,6 +57,13 @@ export async function detectToneWithGroq(samples, sampleRate, targetBase = null)
   formData.append('model', 'whisper-large-v3')
   formData.append('language', 'zh')
   formData.append('response_format', 'json')
+
+  // Bias Whisper toward expected characters for this syllable
+  const hint = buildPromptHint(targetBase)
+  if (hint) {
+    formData.append('prompt', hint)
+    console.log(`[Groq] Prompt hint: "${hint}"`)
+  }
 
   let result
   try {
