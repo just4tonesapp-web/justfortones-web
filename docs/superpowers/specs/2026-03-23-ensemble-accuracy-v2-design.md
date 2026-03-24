@@ -57,7 +57,7 @@ The existing ensemble in `toneDetector.js` runs all loaded models in parallel an
 | Pitch | 0.55 | 0.35 | 3 (signal-based) |
 | Classifier | 0.40 | 0.20 | 3 (signal-based) |
 
-**Groq override rule in `_combine()`:** If Groq voted and its weighted contribution exceeds 40% of total weight from all voting models, use Groq's tone. This prevents scenarios where 3-4 weak models outvote the most accurate one.
+**Groq override rule in `_combine()`:** If Groq voted and its weighted contribution exceeds 40% of total weight from all voting models, skip normal voting and return Groq's tone directly. In this case, set `confidence` to `Math.round((groqWeight / totalWeight) * 100)`, `agreement` to the actual percentage of models that agree with Groq, and `scores` computed normally. This prevents scenarios where 3-4 weak models outvote the most accurate one.
 
 **Rationale for 40% threshold:** With all 6 models voting (total weight = 4.75), Groq's 1.50 = 31.6%. So the override only fires when some weaker models abstain (didn't vote / returned null), making Groq's share rise above 40%. This avoids blindly trusting Groq when the full ensemble disagrees.
 
@@ -94,7 +94,7 @@ The existing ensemble in `toneDetector.js` runs all loaded models in parallel an
 1. `loadDeepgram()` — validate `VITE_DEEPGRAM_API_KEY` exists
 2. `detectToneWithDeepgram(samples, sampleRate, targetBase)`:
    - Resample to 16kHz
-   - Encode as WAV (reuse or duplicate `encodeWAV` from groqModel)
+   - Encode as WAV (duplicate the private `encodeWAV` and `resampleTo16k` helpers from groqModel — they're small utility functions, not worth extracting to a shared module for 2 consumers)
    - POST to Deepgram API
    - Parse transcript, look up tone via CHAR_TONE_MAP
    - Handle 401 (disable), 429 (skip), errors gracefully
