@@ -9,6 +9,7 @@ import { speakChinese } from '../utils/audio.js'
 import { AudioEngine } from '../utils/audioEngine.js'
 import { toneDetector } from '../utils/toneDetector.js'
 import { getMelSpectrogramImage } from '../utils/models/tonetModel.js'
+import { isWebSpeechAvailable, startWebSpeech, stopWebSpeech } from '../utils/models/webSpeechModel.js'
 
 const TOTAL = 12
 const PASS_SCORE = 10
@@ -19,6 +20,8 @@ const JUDGE_PERSONAS = {
   pitch:      { emoji: '🎵', name: 'Maestro' },
   tonenet:    { emoji: '🔬', name: 'Lab' },
   sensevoice: { emoji: '👂', name: 'Sensei' },
+  webSpeech:  { emoji: '🗣️', name: 'Voice' },
+  groq:       { emoji: '☁️', name: 'Cloud' },
 }
 
 const TONE_ARROWS = { 1: '‾', 2: '↗', 3: '↘↗', 4: '↘' }
@@ -72,6 +75,8 @@ export function testCView(container) {
   function updateModelStatus() {
     const judges = [
       { name: 'pitch',      ...JUDGE_PERSONAS.pitch,      alwaysOn: true },
+      { name: 'webSpeech',  ...JUDGE_PERSONAS.webSpeech },
+      { name: 'groq',       ...JUDGE_PERSONAS.groq },
       { name: 'classifier', ...JUDGE_PERSONAS.classifier },
     ]
     const parts = judges.map(j => {
@@ -283,6 +288,11 @@ export function testCView(container) {
     isRecording = true
     hasSpeaking = false
     silenceTimer = null
+
+    // Start Web Speech API in parallel (separate mic stream)
+    if (isWebSpeechAvailable() && toneDetector.loaded.webSpeech) {
+      startWebSpeech()
+    }
     $('tc-rec-label').textContent = 'Listening…'
     $('tc-rec-icon').textContent = '🎤'
     $('tc-rec-status').textContent = 'Speak now!'
@@ -319,6 +329,13 @@ export function testCView(container) {
     const recording = engine.stop()
     isRecording = false
 
+    // Collect Web Speech result (2s timeout)
+    let webSpeechText = null
+    if (isWebSpeechAvailable() && toneDetector.loaded.webSpeech) {
+      webSpeechText = await stopWebSpeech()
+      if (webSpeechText) console.log(`[WebSpeech] Recognized: "${webSpeechText}"`)
+    }
+
     $('tc-rec-label').textContent = 'Analyzing…'
     $('tc-rec-icon').textContent = '⏳'
     $('tc-rec-status').textContent = `Using ${toneDetector.activeModels.length} model(s)…`
@@ -331,7 +348,8 @@ export function testCView(container) {
     // ── Run ensemble detection ──
     const ensemble = await toneDetector.detect(
       { samples: recording.samples, sampleRate: recording.sampleRate },
-      q.base
+      q.base,
+      { webSpeechText }
     )
 
     // Target contour for canvas
@@ -491,7 +509,7 @@ export function testCView(container) {
     for (const r of results) resultMap[r.model] = r
 
     // Show pitch + classifier (whisper disabled — GitHub Pages lacks COOP/COEP headers for SharedArrayBuffer)
-    const shown = ['pitch', 'classifier']
+    const shown = ['pitch', 'webSpeech', 'groq', 'classifier']
 
     const cards = shown.map(modelName => {
       const persona = JUDGE_PERSONAS[modelName]
