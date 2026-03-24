@@ -47,7 +47,10 @@ export function startWebSpeech() {
   recognition.onresult = (event) => {
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const transcript = event.results[i][0].transcript.trim()
-      if (transcript) lastResult = transcript
+      if (transcript) {
+        lastResult = transcript
+        console.log(`[WebSpeech] interim: "${transcript}"`)
+      }
     }
   }
 
@@ -56,13 +59,19 @@ export function startWebSpeech() {
   }
 
   recognition.onend = () => {
+    console.log(`[WebSpeech] ended, result: "${lastResult}"`)
     if (resultPromiseResolve) {
       resultPromiseResolve(lastResult)
       resultPromiseResolve = null
     }
   }
 
-  recognition.start()
+  try {
+    recognition.start()
+    console.log('[WebSpeech] started')
+  } catch (e) {
+    console.warn('[WebSpeech] start failed:', e.message)
+  }
 }
 
 /**

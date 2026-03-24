@@ -52,7 +52,7 @@ export async function detectToneWithWhisper(samples, sampleRate, targetBase = nu
   let result
   try {
     result = await transcriber(
-      { array: audio16k, sampling_rate: 16000 },
+      audio16k,
       { language: 'chinese', task: 'transcribe' }
     )
   } catch (e) {
