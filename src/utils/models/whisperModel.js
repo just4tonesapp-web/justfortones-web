@@ -70,14 +70,14 @@ export async function detectToneWithWhisper(samples, sampleRate, targetBase = nu
   if (targetBase) {
     for (const char of chars) {
       const entry = CHAR_TONE_MAP[char]
-      if (entry && entry.base === targetBase) return entry.tone
+      if (entry && entry.base === targetBase && entry.tone !== 5) return entry.tone
     }
   }
 
   // Second pass: return first recognized char tone (any base)
   for (const char of chars) {
     const entry = CHAR_TONE_MAP[char]
-    if (entry) return entry.tone
+    if (entry && entry.tone !== 5) return entry.tone
   }
 
   return null
@@ -100,7 +100,7 @@ function resampleTo16k(samples, fromRate) {
 // ── Character → { base, tone } lookup ──
 // Covers the 24 characters in CHAR_POOL + tonal siblings + top common chars
 // tone: 1=阴平, 2=阳平, 3=上声, 4=去声, 5=neutral (excluded from detection)
-const CHAR_TONE_MAP = {
+export const CHAR_TONE_MAP = {
   // ma
   '妈': { base: 'ma', tone: 1 }, '麻': { base: 'ma', tone: 2 },
   '马': { base: 'ma', tone: 3 }, '骂': { base: 'ma', tone: 4 },
@@ -114,7 +114,7 @@ const CHAR_TONE_MAP = {
   // tian
   '天': { base: 'tian', tone: 1 }, '田': { base: 'tian', tone: 2 },
   '甜': { base: 'tian', tone: 2 }, '舔': { base: 'tian', tone: 3 },
-  '填': { base: 'tian', tone: 2 }, '天': { base: 'tian', tone: 1 },
+  '填': { base: 'tian', tone: 2 },
   // hua
   '花': { base: 'hua', tone: 1 }, '华': { base: 'hua', tone: 2 },
   '话': { base: 'hua', tone: 4 }, '化': { base: 'hua', tone: 4 },
