@@ -77,6 +77,7 @@ export function testCView(container) {
       { name: 'pitch',      ...JUDGE_PERSONAS.pitch,      alwaysOn: true },
       { name: 'webSpeech',  ...JUDGE_PERSONAS.webSpeech },
       { name: 'groq',       ...JUDGE_PERSONAS.groq },
+      { name: 'whisper',    ...JUDGE_PERSONAS.whisper },
       { name: 'classifier', ...JUDGE_PERSONAS.classifier },
     ]
     const parts = judges.map(j => {
@@ -509,7 +510,7 @@ export function testCView(container) {
     for (const r of results) resultMap[r.model] = r
 
     // Show pitch + classifier (whisper disabled — GitHub Pages lacks COOP/COEP headers for SharedArrayBuffer)
-    const shown = ['pitch', 'webSpeech', 'groq', 'classifier']
+    const shown = ['pitch', 'webSpeech', 'groq', 'whisper', 'classifier']
 
     const cards = shown.map(modelName => {
       const persona = JUDGE_PERSONAS[modelName]

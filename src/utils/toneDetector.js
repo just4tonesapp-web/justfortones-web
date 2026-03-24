@@ -61,12 +61,12 @@ export class ToneDetector {
 
     // All load in parallel — stubs fail instantly, real models load async
     // ToneNet disabled: always outputs T4 (domain shift)
-    // Whisper disabled: requires SharedArrayBuffer — GitHub Pages doesn't send COOP/COEP headers
+    // Whisper: requires SharedArrayBuffer — works on localhost, may fail on GitHub Pages
     await Promise.allSettled([
       load('webSpeech', loadWebSpeech),
       load('groq', loadGroq),
       load('classifier', loadToneClassifier),
-      // load('whisper', () => loadWhisper((status, pct) => onStatus?.('whisper', status, pct))),
+      load('whisper', () => loadWhisper((status, pct) => onStatus?.('whisper', status, pct))),
       // load('tonenet', loadToneNet),
       load('sensevoice', loadSenseVoice),
     ])
