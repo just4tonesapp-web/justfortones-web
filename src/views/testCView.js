@@ -22,6 +22,7 @@ const JUDGE_PERSONAS = {
   tonenet:    { emoji: '🔬', name: 'Lab' },
   sensevoice: { emoji: '👂', name: 'Sensei' },
   groq:       { emoji: '☁️', name: 'Cloud' },
+  deepgram:   { emoji: '🔊', name: 'Deep' },
 }
 
 const TONE_ARROWS = { 1: '‾', 2: '↗', 3: '↘↗', 4: '↘' }
@@ -76,6 +77,7 @@ export function testCView(container) {
     const judges = [
       { name: 'pitch',      ...JUDGE_PERSONAS.pitch,      alwaysOn: true },
       { name: 'groq',       ...JUDGE_PERSONAS.groq },
+      { name: 'deepgram',  ...JUDGE_PERSONAS.deepgram },
       { name: 'whisper',    ...JUDGE_PERSONAS.whisper },
       { name: 'classifier', ...JUDGE_PERSONAS.classifier },
     ]
@@ -498,7 +500,7 @@ export function testCView(container) {
     for (const r of results) resultMap[r.model] = r
 
     // Show pitch + classifier (whisper disabled — GitHub Pages lacks COOP/COEP headers for SharedArrayBuffer)
-    const shown = ['pitch', 'groq', 'whisper', 'classifier']
+    const shown = ['pitch', 'groq', 'deepgram', 'whisper', 'classifier']
 
     const cards = shown.map(modelName => {
       const persona = JUDGE_PERSONAS[modelName]
