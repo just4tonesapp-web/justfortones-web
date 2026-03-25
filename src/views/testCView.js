@@ -8,6 +8,7 @@ import { applyTone, shuffle } from '../utils/pinyin.js'
 import { speakChinese } from '../utils/audio.js'
 import { AudioEngine } from '../utils/audioEngine.js'
 import { toneDetector } from '../utils/toneDetector.js'
+import { supabase } from '../supabaseClient.js'
 import { getMelSpectrogramImage } from '../utils/models/tonetModel.js'
 // WebSpeech disabled: coi-serviceworker's COOP header blocks Web Speech API
 // import { isWebSpeechAvailable, startWebSpeech, stopWebSpeech } from '../utils/models/webSpeechModel.js'
@@ -232,7 +233,10 @@ export function testCView(container) {
   // Accuracy logger — user confirms if ensemble was right or wrong
   let pendingLogEntry = null
 
-  function logAccuracy(userSaysCorrect) {
+  // Stable session ID for grouping questions in one test run
+  const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+
+  async function logAccuracy(userSaysCorrect) {
     if (!pendingLogEntry) return
     pendingLogEntry.userCorrect = userSaysCorrect
 
@@ -244,12 +248,35 @@ export function testCView(container) {
     const mark = userSaysCorrect ? '✓' : '✗'
     console.log(`[accuracy] Q${pendingLogEntry.questionNum}: target=T${pendingLogEntry.targetTone} ensemble=T${pendingLogEntry.ensembleTone || '—'} ${mark} | ${modelStr}`)
 
-    // Persist to localStorage
+    // Persist to localStorage (backup)
     const log = JSON.parse(localStorage.getItem('j4t_accuracy_log') || '[]')
     log.push(pendingLogEntry)
     localStorage.setItem('j4t_accuracy_log', JSON.stringify(log))
 
-    // Hide confirm buttons, show feedback
+    // Persist to Supabase
+    const { data: { session } } = await supabase.auth.getSession()
+    const row = {
+      user_id: session?.user?.id || null,
+      session_id: sessionId,
+      question_num: pendingLogEntry.questionNum,
+      char: pendingLogEntry.char,
+      base: pendingLogEntry.base,
+      target_tone: pendingLogEntry.targetTone,
+      ensemble_tone: pendingLogEntry.ensembleTone,
+      confidence: pendingLogEntry.confidence,
+      agreement: pendingLogEntry.agreement,
+      pitch_vote: m.pitch,
+      groq_vote: m.groq,
+      deepgram_vote: m.deepgram,
+      whisper_vote: m.whisper,
+      classifier_vote: m.classifier,
+      auto_correct: pendingLogEntry.autoCorrect,
+      user_correct: userSaysCorrect,
+    }
+    const { error } = await supabase.from('accuracy_log').insert(row)
+    if (error) console.warn('[accuracy] Supabase insert failed:', error.message)
+
+    // Hide confirm buttons
     $('tc-confirm-wrap').classList.add('hidden')
     pendingLogEntry = null
   }
