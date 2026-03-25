@@ -19,13 +19,15 @@ import { loadWebSpeech, detectToneFromText } from './models/webSpeechModel.js'
 import { loadGroq, detectToneWithGroq } from './models/groqModel.js'
 import { loadDeepgram, detectToneWithDeepgram } from './models/deepgramModel.js'
 
+// Weights calibrated from 25-question accuracy log (2026-03-25):
+//   Deepgram 62%, Groq 38%, Whisper 38%, Classifier 33%, Pitch 22%
 const MODEL_WEIGHTS = {
-  groq:       1.50,   // Tier 1: cloud ASR (highest accuracy)
-  deepgram:   1.20,   // Tier 1: cloud ASR
-  sensevoice: 1.00,   // Tier 2: in-browser ASR (stub, not yet active)
-  whisper:    0.50,   // Tier 2: in-browser ASR
-  pitch:      0.35,   // Tier 3: signal-based
-  classifier: 0.20,   // Tier 3: signal-based (low accuracy)
+  deepgram:   1.50,   // Best performer (62% accuracy)
+  groq:       0.80,   // Cloud ASR but biased toward T2 (38%)
+  sensevoice: 1.00,   // Stub, not yet active
+  whisper:    0.50,   // In-browser ASR (38%)
+  classifier: 0.40,   // Low sample but sometimes right (33%)
+  pitch:      0.15,   // Near-random, only breaks ties (22%)
 }
 
 export class ToneDetector {
@@ -177,13 +179,16 @@ export class ToneDetector {
       totalWeight += r.weight
     }
 
-    // Groq override: if Groq's weight exceeds 40% of total voting weight, trust it
+    // Cloud agreement override: if both Groq and Deepgram voted the same tone, trust them
     const groqResult = results.find(r => r.model === 'groq')
-    if (groqResult && (groqResult.weight / totalWeight) > 0.40) {
-      const agreeing = results.filter(r => r.tone === groqResult.tone).length
+    const deepgramResult = results.find(r => r.model === 'deepgram')
+    if (groqResult && deepgramResult && groqResult.tone === deepgramResult.tone) {
+      const cloudTone = groqResult.tone
+      const cloudWeight = groqResult.weight + deepgramResult.weight
+      const agreeing = results.filter(r => r.tone === cloudTone).length
       return {
-        tone: groqResult.tone,
-        confidence: Math.round((groqResult.weight / totalWeight) * 100),
+        tone: cloudTone,
+        confidence: Math.round((cloudWeight / totalWeight) * 100),
         agreement: Math.round((agreeing / results.length) * 100),
         scores,
       }
