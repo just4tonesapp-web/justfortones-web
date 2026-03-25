@@ -204,6 +204,11 @@ export function testCView(container) {
             <div class="tc-q-score" id="tc-q-score">85%</div>
             <div class="tc-q-msg" id="tc-q-msg">Great match!</div>
             <div id="tc-judges-wrap" class="hidden"></div>
+            <div id="tc-confirm-wrap" class="tc-confirm-wrap hidden">
+              <span style="font-size:0.8rem;color:var(--text-secondary)">Was this correct?</span>
+              <button class="btn btn-sm tc-confirm-btn" id="tc-confirm-yes" style="background:var(--correct);color:#fff">Correct</button>
+              <button class="btn btn-sm tc-confirm-btn" id="tc-confirm-no" style="background:var(--incorrect);color:#fff">Wrong</button>
+            </div>
             <button class="btn btn-primary" id="tc-next">Next →</button>
           </div>
         </div>
@@ -223,6 +228,34 @@ export function testCView(container) {
   $('tc-start').addEventListener('click', startTest)
   $('tc-listen').addEventListener('click', listenExample)
   $('tc-next').addEventListener('click', nextQuestion)
+
+  // Accuracy logger — user confirms if ensemble was right or wrong
+  let pendingLogEntry = null
+
+  function logAccuracy(userSaysCorrect) {
+    if (!pendingLogEntry) return
+    pendingLogEntry.userCorrect = userSaysCorrect
+
+    // Console one-liner
+    const m = pendingLogEntry.models
+    const modelStr = ['pitch', 'groq', 'deepgram', 'whisper', 'classifier']
+      .map(name => `${name}→${m[name] !== null ? 'T' + m[name] : '—'}`)
+      .join(' ')
+    const mark = userSaysCorrect ? '✓' : '✗'
+    console.log(`[accuracy] Q${pendingLogEntry.questionNum}: target=T${pendingLogEntry.targetTone} ensemble=T${pendingLogEntry.ensembleTone || '—'} ${mark} | ${modelStr}`)
+
+    // Persist to localStorage
+    const log = JSON.parse(localStorage.getItem('j4t_accuracy_log') || '[]')
+    log.push(pendingLogEntry)
+    localStorage.setItem('j4t_accuracy_log', JSON.stringify(log))
+
+    // Hide confirm buttons, show feedback
+    $('tc-confirm-wrap').classList.add('hidden')
+    pendingLogEntry = null
+  }
+
+  $('tc-confirm-yes').addEventListener('click', () => logAccuracy(true))
+  $('tc-confirm-no').addEventListener('click', () => logAccuracy(false))
 
   $('tc-record').addEventListener('click', () => {
     if (!isRecording && !$('tc-record').disabled) startRecording()
@@ -260,6 +293,8 @@ export function testCView(container) {
     $('tc-mel-wrap').classList.add('hidden')
     $('tc-q-result').classList.add('hidden')
     $('tc-judges-wrap').classList.add('hidden')
+    $('tc-confirm-wrap').classList.add('hidden')
+    pendingLogEntry = null
     $('tc-listen').disabled = false
 
     // Re-animate
@@ -413,6 +448,26 @@ export function testCView(container) {
     $('tc-q-result').classList.remove('hidden')
     $('tc-prog-score').textContent = `Score: ${score}`
     showToast(passed)
+
+    // Prepare accuracy log entry and show confirm buttons
+    const modelVotes = {}
+    for (const name of ['pitch', 'groq', 'deepgram', 'whisper', 'classifier']) {
+      const r = ensemble.results.find(r => r.model === name)
+      modelVotes[name] = r ? r.tone : null
+    }
+    pendingLogEntry = {
+      questionNum: currentQ + 1,
+      char: q.char,
+      base: q.base,
+      targetTone: q.tone,
+      ensembleTone: detectedTone,
+      confidence: ensemble.confidence,
+      agreement: ensemble.agreement,
+      models: modelVotes,
+      autoCorrect: passed,
+      timestamp: new Date().toISOString(),
+    }
+    $('tc-confirm-wrap').classList.remove('hidden')
 
     $('tc-rec-label').textContent = 'Done'
     $('tc-rec-icon').textContent = passed ? '✓' : '✗'
@@ -796,6 +851,14 @@ const scopedCSS = `
   .tc-q-msg {
     font-size: 0.9rem; color: var(--text-secondary);
     margin: 8px 0 16px;
+  }
+  .tc-confirm-wrap {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    margin-bottom: 12px;
+  }
+  .tc-confirm-btn {
+    padding: 6px 16px; border-radius: 16px; font-size: 0.8rem; font-weight: 600;
+    border: none; cursor: pointer; font-family: inherit;
   }
 
   /* Report reused styles */
