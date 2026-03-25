@@ -206,9 +206,9 @@ export function testCView(container) {
             <div class="tc-q-msg" id="tc-q-msg">Great match!</div>
             <div id="tc-judges-wrap" class="hidden"></div>
             <div id="tc-confirm-wrap" class="tc-confirm-wrap hidden">
-              <span style="font-size:0.8rem;color:var(--text-secondary)">Was this correct?</span>
-              <button class="btn btn-sm tc-confirm-btn" id="tc-confirm-yes" style="background:var(--correct);color:#fff">Correct</button>
-              <button class="btn btn-sm tc-confirm-btn" id="tc-confirm-no" style="background:var(--incorrect);color:#fff">Wrong</button>
+              <span style="font-size:0.8rem;color:var(--text-secondary)">Did you say the right tone?</span>
+              <button class="btn btn-sm tc-confirm-btn" id="tc-confirm-yes" style="background:var(--correct);color:#fff">Yes</button>
+              <button class="btn btn-sm tc-confirm-btn" id="tc-confirm-no" style="background:var(--incorrect);color:#fff">No</button>
             </div>
             <button class="btn btn-primary" id="tc-next">Next →</button>
           </div>
@@ -591,8 +591,8 @@ export function testCView(container) {
       const participated = !!r
       const correct = participated && r.tone === targetTone
       const stateClass = !participated ? 'judge-idle' : correct ? 'judge-correct' : 'judge-incorrect'
-      const voteText = participated ? `T${r.tone} ${TONE_ARROWS[r.tone]}` : '—'
-      const verdict = !participated ? '' : correct ? '✓' : '✗'
+      const voteText = participated ? `T${r.tone} ${TONE_ARROWS[r.tone]}` : 'No vote'
+      const verdict = !participated ? '—' : correct ? '✓' : '✗'
       return `
         <div class="tc-judge-card ${stateClass}">
           <div class="tc-judge-avatar">${persona.emoji}</div>
