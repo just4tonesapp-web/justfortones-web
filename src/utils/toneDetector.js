@@ -25,14 +25,14 @@ import { loadAzure, detectToneWithAzure } from './models/azureModel.js'
 // Weights calibrated from 48-question accuracy log (2026-03-26):
 //   Deepgram 90%, GroqTurbo 78%, Whisper 40%, Groq 36%, Classifier 36%, Pitch 36%
 const MODEL_WEIGHTS = {
-  azure:      2.50,   // Direct tone detection via pronunciation assessment — highest weight
-  deepgram:   1.80,   // Best ASR performer (90% accuracy)
-  groqTurbo:  1.20,   // Strong diversity model (78% accuracy)
-  google:     1.00,   // Google Cloud Speech — no data yet, moderate default
-  groq:       0.40,   // Weak, biased toward T2 (36%)
+  azure:      3.50,   // Direct tone detection via pronunciation assessment — highest weight
+  deepgram:   2.50,   // Best ASR performer (90% accuracy)
+  groqTurbo:  1.00,   // Strong diversity model (78% accuracy)
+  google:     0.80,   // Moderate default
+  groq:       0.20,   // Weak, biased toward T2 (36%)
   sensevoice: 1.00,   // Stub, not yet active
-  whisper:    0.40,   // In-browser ASR (40%)
-  classifier: 0.30,   // Low accuracy (36%), only breaks ties
+  whisper:    0.30,   // In-browser ASR (40%)
+  classifier: 0.10,   // Low accuracy (36%), only breaks ties
   pitch:      0.10,   // Near-random (36%), minimal influence
 }
 
@@ -213,26 +213,6 @@ export class ToneDetector {
     for (const r of results) {
       scores[r.tone] = (scores[r.tone] || 0) + r.weight
       totalWeight += r.weight
-    }
-
-    // Cloud agreement override: if 2+ cloud ASR models agree, trust them
-    const cloudModels = ['azure', 'groq', 'groqTurbo', 'google', 'deepgram']
-    const cloudResults = results.filter(r => cloudModels.includes(r.model))
-    if (cloudResults.length >= 2) {
-      const cloudVotes = {}
-      for (const r of cloudResults) cloudVotes[r.tone] = (cloudVotes[r.tone] || 0) + 1
-      const bestTone = parseInt(Object.entries(cloudVotes).sort((a, b) => b[1] - a[1])[0][0])
-      const bestCount = cloudVotes[bestTone]
-      if (bestCount >= 2) {
-        const cloudWeight = cloudResults.filter(r => r.tone === bestTone).reduce((s, r) => s + r.weight, 0)
-        const agreeing = results.filter(r => r.tone === bestTone).length
-        return {
-          tone: bestTone,
-          confidence: Math.round((cloudWeight / totalWeight) * 100),
-          agreement: Math.round((agreeing / results.length) * 100),
-          scores,
-        }
-      }
     }
 
     // Normal weighted vote: highest weighted score wins
