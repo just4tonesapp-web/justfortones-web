@@ -71,13 +71,13 @@ export async function detectToneWithGoogle(samples, sampleRate, targetBase = nul
       body: JSON.stringify(body),
     })
 
-    if (response.status === 403 || response.status === 401) {
+    if (response.status === 401) {
       console.error('[Google] Invalid API key — disabling for session')
       apiKey = null
       return null
     }
-    if (response.status === 429) {
-      console.warn('[Google] Rate limited — skipping')
+    if (response.status === 403 || response.status === 429) {
+      console.warn(`[Google] ${response.status} — rate limited or quota exceeded, skipping`)
       return null
     }
     if (!response.ok) {

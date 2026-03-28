@@ -88,6 +88,18 @@ export async function detectToneWithDeepgram(samples, sampleRate, targetBase = n
 
   console.log(`[Deepgram] Transcription: "${text}"`)
 
+  // Handle digit transcriptions (e.g. "4" instead of "四")
+  const DIGIT_TO_CHAR = { '1': '一', '2': '二', '3': '三', '4': '四', '5': '五',
+    '6': '六', '7': '七', '8': '八', '9': '九', '10': '十' }
+  const mapped = DIGIT_TO_CHAR[text]
+  if (mapped) {
+    const entry = CHAR_TONE_MAP[mapped]
+    if (entry && entry.tone !== 5) {
+      console.log(`[Deepgram] Digit "${text}" → "${mapped}" → T${entry.tone}`)
+      return entry.tone
+    }
+  }
+
   // Look up tone from characters
   const chars = [...text]
 

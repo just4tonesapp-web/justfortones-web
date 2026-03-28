@@ -10,6 +10,7 @@
 // ═══════════════════════════════════════
 
 import * as sdk from 'microsoft-cognitiveservices-speech-sdk'
+import { CHAR_TONE_MAP } from './whisperModel.js'
 
 let speechKey = null
 let speechRegion = null
@@ -106,22 +107,35 @@ export async function detectToneWithAzure(samples, sampleRate, targetBase = null
             return
           }
 
-          // Look through all words/phonemes for tone phonemes (1-5)
+          // Look through all words/phonemes for tone phonemes
           for (const word of nbest.Words) {
             if (!word.Phonemes) continue
             for (const phoneme of word.Phonemes) {
-              if (/^[1-4]$/.test(phoneme.Phoneme)) {
-                const detectedTone = parseInt(phoneme.Phoneme)
+              // Match tone digit: exact "4", trailing "yue4", or spaced "si 4"
+              const exactMatch = /^[1-4]$/.test(phoneme.Phoneme)
+              const trailingMatch = phoneme.Phoneme?.match?.(/\s?(\d)$/)
+
+              if (exactMatch || trailingMatch) {
+                const detectedTone = exactMatch
+                  ? parseInt(phoneme.Phoneme)
+                  : parseInt(trailingMatch[1])
+
+                if (detectedTone < 1 || detectedTone > 4) continue
+
                 const accuracy = phoneme.PronunciationAssessment?.AccuracyScore || 0
 
                 // Also check NBestPhonemes for the actual distribution
                 const nbestPhonemes = phoneme.PronunciationAssessment?.NBestPhonemes
                 if (nbestPhonemes) {
                   const topTone = nbestPhonemes.find(p => /^[1-4]$/.test(p.Phoneme))
+                    || nbestPhonemes.find(p => { const m = p.Phoneme?.match?.(/\s?(\d)$/); return m && parseInt(m[1]) >= 1 && parseInt(m[1]) <= 4 })
                   if (topTone) {
-                    console.log(`[Azure] Tone: T${topTone.Phoneme} (score=${topTone.Score}), dist: ${nbestPhonemes.filter(p => /^[1-5]$/.test(p.Phoneme)).map(p => `T${p.Phoneme}:${p.Score}`).join(' ')}`)
+                    const toneNum = /^[1-4]$/.test(topTone.Phoneme)
+                      ? parseInt(topTone.Phoneme)
+                      : parseInt(topTone.Phoneme.match(/\s?(\d)$/)[1])
+                    console.log(`[Azure] Tone: T${toneNum} (score=${topTone.Score}), dist: ${nbestPhonemes.filter(p => /\d$/.test(p.Phoneme)).map(p => `${p.Phoneme}:${p.Score}`).join(' ')}`)
                     recognizer.close()
-                    resolve(parseInt(topTone.Phoneme))
+                    resolve(toneNum)
                     return
                   }
                 }
@@ -134,10 +148,31 @@ export async function detectToneWithAzure(samples, sampleRate, targetBase = null
             }
           }
 
-          // Fallback: if no tone phoneme found, try to get tone from recognized text
+          // Fallback: use recognized text + CHAR_TONE_MAP (same as Groq/Google/Deepgram)
           const text = result.text?.trim()
           if (text) {
-            console.log(`[Azure] No tone phoneme found, text: "${text}"`)
+            console.log(`[Azure] No tone phoneme found, text: "${text}" — trying CHAR_TONE_MAP`)
+            const chars = [...text]
+            if (targetBase) {
+              for (const char of chars) {
+                const entry = CHAR_TONE_MAP[char]
+                if (entry && entry.base === targetBase && entry.tone !== 5) {
+                  console.log(`[Azure] Fallback: "${char}" → T${entry.tone}`)
+                  recognizer.close()
+                  resolve(entry.tone)
+                  return
+                }
+              }
+            }
+            for (const char of chars) {
+              const entry = CHAR_TONE_MAP[char]
+              if (entry && entry.tone !== 5) {
+                console.log(`[Azure] Fallback: "${char}" → T${entry.tone}`)
+                recognizer.close()
+                resolve(entry.tone)
+                return
+              }
+            }
           }
           recognizer.close()
           resolve(null)

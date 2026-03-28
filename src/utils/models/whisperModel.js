@@ -200,4 +200,11 @@ export const CHAR_TONE_MAP = {
   '家': { base: 'jia', tone: 1 }, '两': { base: 'liang', tone: 3 },
   '没': { base: 'mei', tone: 2 }, '于': { base: 'yu', tone: 2 },
   '所': { base: 'suo', tone: 3 }, '个': { base: 'ge', tone: 4 },
+  // Common ASR misheard / filler characters
+  '嗯': { base: 'en', tone: 2 },  '安': { base: 'an', tone: 1 },
+  '啊': { base: 'a', tone: 1 },   '哦': { base: 'o', tone: 4 },
+  '呢': { base: 'ne', tone: 5 },  '吗': { base: 'ma', tone: 5 },
+  '哈': { base: 'ha', tone: 1 },  '嘛': { base: 'ma', tone: 5 },
+  '噢': { base: 'o', tone: 1 },   '哎': { base: 'ai', tone: 1 },
+  '唉': { base: 'ai', tone: 4 },  '嗨': { base: 'hai', tone: 1 },
 }
