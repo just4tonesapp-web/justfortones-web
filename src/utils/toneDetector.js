@@ -5,10 +5,11 @@
 // via weighted vote based on known model accuracy.
 //
 // Tiered model weights:
-//   Tier 1 (cloud ASR):    Groq 1.50, Deepgram 1.20
-//   Tier 2 (browser ASR):  SenseVoice 1.00, Whisper 0.50
-//   Tier 3 (signal-based): Pitch 0.35, Classifier 0.20
-// Groq override: if Groq's weight > 40% of total, trust it directly
+//   Tier 0 (tone-specific): Azure 2.50 (direct tone detection via pronunciation assessment)
+//   Tier 1 (cloud ASR):     Deepgram 1.50, Google 1.20, Groq 0.80, GroqTurbo 0.70
+//   Tier 2 (browser ASR):   SenseVoice 1.00, Whisper 0.50
+//   Tier 3 (signal-based):  Classifier 0.40, Pitch 0.15
+// Cloud override: if 2+ cloud models agree, trust them
 // ═══════════════════════════════════════
 import { detectToneWithPitch, getPitchContour } from './models/pitchModel.js'
 import { loadWhisper, detectToneWithWhisper } from './models/whisperModel.js'
@@ -16,18 +17,23 @@ import { loadToneNet, detectToneWithToneNet } from './models/tonetModel.js'
 import { loadSenseVoice, detectToneWithSenseVoice } from './models/sensevoiceModel.js'
 import { loadToneClassifier, detectToneWithClassifier } from './models/toneClassifierModel.js'
 import { loadWebSpeech, detectToneFromText } from './models/webSpeechModel.js'
-import { loadGroq, detectToneWithGroq } from './models/groqModel.js'
+import { loadGroq, detectToneWithGroq, detectToneWithGroqTurbo } from './models/groqModel.js'
 import { loadDeepgram, detectToneWithDeepgram } from './models/deepgramModel.js'
+import { loadGoogleSpeech, detectToneWithGoogle } from './models/googleSpeechModel.js'
+import { loadAzure, detectToneWithAzure } from './models/azureModel.js'
 
-// Weights calibrated from 25-question accuracy log (2026-03-25):
-//   Deepgram 62%, Groq 38%, Whisper 38%, Classifier 33%, Pitch 22%
+// Weights calibrated from 48-question accuracy log (2026-03-26):
+//   Deepgram 90%, GroqTurbo 78%, Whisper 40%, Groq 36%, Classifier 36%, Pitch 36%
 const MODEL_WEIGHTS = {
-  deepgram:   1.50,   // Best performer (62% accuracy)
-  groq:       0.80,   // Cloud ASR but biased toward T2 (38%)
+  azure:      2.50,   // Direct tone detection via pronunciation assessment — highest weight
+  deepgram:   1.80,   // Best ASR performer (90% accuracy)
+  groqTurbo:  1.20,   // Strong diversity model (78% accuracy)
+  google:     1.00,   // Google Cloud Speech — no data yet, moderate default
+  groq:       0.40,   // Weak, biased toward T2 (36%)
   sensevoice: 1.00,   // Stub, not yet active
-  whisper:    0.50,   // In-browser ASR (38%)
-  classifier: 0.40,   // Low sample but sometimes right (33%)
-  pitch:      0.15,   // Near-random, only breaks ties (22%)
+  whisper:    0.40,   // In-browser ASR (40%)
+  classifier: 0.30,   // Low accuracy (36%), only breaks ties
+  pitch:      0.10,   // Near-random (36%), minimal influence
 }
 
 export class ToneDetector {
@@ -65,7 +71,10 @@ export class ToneDetector {
     // Whisper: requires SharedArrayBuffer via coi-serviceworker
     await Promise.allSettled([
       // load('webSpeech', loadWebSpeech),
+      load('azure', loadAzure),
       load('groq', loadGroq),
+      load('groqTurbo', loadGroq),  // reuses same API key
+      load('google', loadGoogleSpeech),
       load('deepgram', loadDeepgram),
       load('classifier', loadToneClassifier),
       load('whisper', () => loadWhisper((status, pct) => onStatus?.('whisper', status, pct))),
@@ -94,10 +103,19 @@ export class ToneDetector {
    *   userContour: number[] // pitch contour for canvas (5 points, 1-5 scale)
    * }>}
    */
-  async detect({ samples, sampleRate }, targetBase = null, { webSpeechText = null } = {}) {
+  async detect({ samples, sampleRate }, targetBase = null, { webSpeechText = null, referenceChar = null } = {}) {
     // Trim leading/trailing silence so models see only the voiced syllable
     samples = trimSilence(samples, sampleRate)
     const jobs = []
+
+    // ── Azure Pronunciation Assessment (direct tone detection) ──
+    if (this.loaded.azure) {
+      jobs.push(
+        detectToneWithAzure(samples, sampleRate, targetBase, referenceChar)
+          .then(tone => tone !== null ? { model: 'azure', tone, weight: MODEL_WEIGHTS.azure } : null)
+          .catch(() => null)
+      )
+    }
 
     // ── Pitch model (always available, sync) ──
     jobs.push(
@@ -112,6 +130,24 @@ export class ToneDetector {
       jobs.push(
         detectToneWithGroq(samples, sampleRate, targetBase)
           .then(tone => tone !== null ? { model: 'groq', tone, weight: MODEL_WEIGHTS.groq } : null)
+          .catch(() => null)
+      )
+    }
+
+    // ── Groq Whisper Turbo ──
+    if (this.loaded.groqTurbo) {
+      jobs.push(
+        detectToneWithGroqTurbo(samples, sampleRate, targetBase)
+          .then(tone => tone !== null ? { model: 'groqTurbo', tone, weight: MODEL_WEIGHTS.groqTurbo } : null)
+          .catch(() => null)
+      )
+    }
+
+    // ── Google Cloud Speech ──
+    if (this.loaded.google) {
+      jobs.push(
+        detectToneWithGoogle(samples, sampleRate, targetBase)
+          .then(tone => tone !== null ? { model: 'google', tone, weight: MODEL_WEIGHTS.google } : null)
           .catch(() => null)
       )
     }
@@ -179,18 +215,23 @@ export class ToneDetector {
       totalWeight += r.weight
     }
 
-    // Cloud agreement override: if both Groq and Deepgram voted the same tone, trust them
-    const groqResult = results.find(r => r.model === 'groq')
-    const deepgramResult = results.find(r => r.model === 'deepgram')
-    if (groqResult && deepgramResult && groqResult.tone === deepgramResult.tone) {
-      const cloudTone = groqResult.tone
-      const cloudWeight = groqResult.weight + deepgramResult.weight
-      const agreeing = results.filter(r => r.tone === cloudTone).length
-      return {
-        tone: cloudTone,
-        confidence: Math.round((cloudWeight / totalWeight) * 100),
-        agreement: Math.round((agreeing / results.length) * 100),
-        scores,
+    // Cloud agreement override: if 2+ cloud ASR models agree, trust them
+    const cloudModels = ['azure', 'groq', 'groqTurbo', 'google', 'deepgram']
+    const cloudResults = results.filter(r => cloudModels.includes(r.model))
+    if (cloudResults.length >= 2) {
+      const cloudVotes = {}
+      for (const r of cloudResults) cloudVotes[r.tone] = (cloudVotes[r.tone] || 0) + 1
+      const bestTone = parseInt(Object.entries(cloudVotes).sort((a, b) => b[1] - a[1])[0][0])
+      const bestCount = cloudVotes[bestTone]
+      if (bestCount >= 2) {
+        const cloudWeight = cloudResults.filter(r => r.tone === bestTone).reduce((s, r) => s + r.weight, 0)
+        const agreeing = results.filter(r => r.tone === bestTone).length
+        return {
+          tone: bestTone,
+          confidence: Math.round((cloudWeight / totalWeight) * 100),
+          agreement: Math.round((agreeing / results.length) * 100),
+          scores,
+        }
       }
     }
 

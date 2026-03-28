@@ -116,6 +116,57 @@ export async function detectToneWithGroq(samples, sampleRate, targetBase = null)
   return null
 }
 
+/**
+ * Same as detectToneWithGroq but uses whisper-large-v3-turbo model.
+ * Different model may have different error patterns → better ensemble diversity.
+ */
+export async function detectToneWithGroqTurbo(samples, sampleRate, targetBase = null) {
+  if (!apiKey) throw new Error('Groq not loaded')
+
+  const audio16k = sampleRate === 16000 ? samples : resampleTo16k(samples, sampleRate)
+  const wavBlob = encodeWAV(audio16k, 16000)
+
+  const formData = new FormData()
+  formData.append('file', wavBlob, 'audio.wav')
+  formData.append('model', 'whisper-large-v3-turbo')
+  formData.append('language', 'zh')
+  formData.append('response_format', 'json')
+
+  const hint = buildPromptHint(targetBase)
+  if (hint) formData.append('prompt', hint)
+
+  let result
+  try {
+    const response = await fetch(GROQ_API_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      body: formData,
+    })
+    if (!response.ok) return null
+    result = await response.json()
+  } catch (e) {
+    return null
+  }
+
+  const text = result?.text?.trim()
+  if (!text) return null
+
+  console.log(`[GroqTurbo] Transcription: "${text}"`)
+
+  const chars = [...text]
+  if (targetBase) {
+    for (const char of chars) {
+      const entry = CHAR_TONE_MAP[char]
+      if (entry && entry.base === targetBase && entry.tone !== 5) return entry.tone
+    }
+  }
+  for (const char of chars) {
+    const entry = CHAR_TONE_MAP[char]
+    if (entry && entry.tone !== 5) return entry.tone
+  }
+  return null
+}
+
 // ── Resample to 16kHz (linear interpolation) ──
 function resampleTo16k(samples, fromRate) {
   const ratio = fromRate / 16000

@@ -17,12 +17,15 @@ const TOTAL = 12
 const PASS_SCORE = 10
 
 const JUDGE_PERSONAS = {
+  azure:      { emoji: '🎯', name: 'Azure' },
   classifier: { emoji: '🤖', name: 'ToneBot' },
   whisper:    { emoji: '🦉', name: 'Whisperer' },
   pitch:      { emoji: '🎵', name: 'Maestro' },
   tonenet:    { emoji: '🔬', name: 'Lab' },
   sensevoice: { emoji: '👂', name: 'Sensei' },
   groq:       { emoji: '☁️', name: 'Cloud' },
+  groqTurbo:  { emoji: '⚡', name: 'Turbo' },
+  google:     { emoji: '🔍', name: 'Google' },
   deepgram:   { emoji: '🔊', name: 'Deep' },
 }
 
@@ -76,8 +79,11 @@ export function testCView(container) {
 
   function updateModelStatus() {
     const judges = [
+      { name: 'azure',      ...JUDGE_PERSONAS.azure },
       { name: 'pitch',      ...JUDGE_PERSONAS.pitch,      alwaysOn: true },
       { name: 'groq',       ...JUDGE_PERSONAS.groq },
+      { name: 'groqTurbo',  ...JUDGE_PERSONAS.groqTurbo },
+      { name: 'google',     ...JUDGE_PERSONAS.google },
       { name: 'deepgram',  ...JUDGE_PERSONAS.deepgram },
       { name: 'whisper',    ...JUDGE_PERSONAS.whisper },
       { name: 'classifier', ...JUDGE_PERSONAS.classifier },
@@ -242,7 +248,7 @@ export function testCView(container) {
 
     // Console one-liner
     const m = pendingLogEntry.models
-    const modelStr = ['pitch', 'groq', 'deepgram', 'whisper', 'classifier']
+    const modelStr = ['azure', 'pitch', 'groq', 'groqTurbo', 'google', 'deepgram', 'whisper', 'classifier']
       .map(name => `${name}→${m[name] !== null ? 'T' + m[name] : '—'}`)
       .join(' ')
     const mark = userSaysCorrect ? '✓' : '✗'
@@ -265,8 +271,11 @@ export function testCView(container) {
       ensemble_tone: pendingLogEntry.ensembleTone,
       confidence: pendingLogEntry.confidence,
       agreement: pendingLogEntry.agreement,
+      azure_vote: m.azure,
       pitch_vote: m.pitch,
       groq_vote: m.groq,
+      groq_turbo_vote: m.groqTurbo,
+      google_vote: m.google,
       deepgram_vote: m.deepgram,
       whisper_vote: m.whisper,
       classifier_vote: m.classifier,
@@ -402,7 +411,7 @@ export function testCView(container) {
     const ensemble = await toneDetector.detect(
       { samples: recording.samples, sampleRate: recording.sampleRate },
       q.base,
-      {}
+      { referenceChar: q.char }
     )
 
     // Target contour for canvas
@@ -478,7 +487,7 @@ export function testCView(container) {
 
     // Prepare accuracy log entry and show confirm buttons
     const modelVotes = {}
-    for (const name of ['pitch', 'groq', 'deepgram', 'whisper', 'classifier']) {
+    for (const name of ['azure', 'pitch', 'groq', 'groqTurbo', 'google', 'deepgram', 'whisper', 'classifier']) {
       const r = ensemble.results.find(r => r.model === name)
       modelVotes[name] = r ? r.tone : null
     }
@@ -582,7 +591,7 @@ export function testCView(container) {
     for (const r of results) resultMap[r.model] = r
 
     // Show pitch + classifier (whisper disabled — GitHub Pages lacks COOP/COEP headers for SharedArrayBuffer)
-    const shown = ['pitch', 'groq', 'deepgram', 'whisper', 'classifier']
+    const shown = ['azure', 'pitch', 'groq', 'groqTurbo', 'google', 'deepgram', 'whisper', 'classifier']
 
     const cards = shown.map(modelName => {
       const persona = JUDGE_PERSONAS[modelName]
