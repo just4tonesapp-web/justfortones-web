@@ -22,18 +22,21 @@ import { loadDeepgram, detectToneWithDeepgram } from './models/deepgramModel.js'
 import { loadGoogleSpeech, detectToneWithGoogle } from './models/googleSpeechModel.js'
 import { loadAzure, detectToneWithAzure } from './models/azureModel.js'
 
-// Weights calibrated from 48-question accuracy log (2026-03-26):
-//   Deepgram 90%, GroqTurbo 78%, Whisper 40%, Groq 36%, Classifier 36%, Pitch 36%
+// Weights calibrated from 48-question accuracy log (2026-03-26) + manual CSV analysis:
+// Pure ASR models suffer from "Real Word Bias" on single syllables (they transcribe what you 
+// meant to say rather than what you acoustically said). 
+// The Pitch model is purely acoustic and avoids this bias (scored 75% on mispronunciations).
+// Groq (Whisper Large v3) also handled mispronunciations surprisingly well (85%).
 const MODEL_WEIGHTS = {
-  azure:      3.50,   // Direct tone detection via pronunciation assessment — highest weight
-  deepgram:   2.50,   // Best ASR performer (90% accuracy)
-  groqTurbo:  1.00,   // Strong diversity model (78% accuracy)
-  google:     0.80,   // Moderate default
-  groq:       0.20,   // Weak, biased toward T2 (36%)
-  sensevoice: 1.00,   // Stub, not yet active
-  whisper:    0.30,   // In-browser ASR (40%)
-  classifier: 0.10,   // Low accuracy (36%), only breaks ties
-  pitch:      0.10,   // Near-random (36%), minimal influence
+  azure:      1.50,   // Standard cloud ASR
+  deepgram:   2.00,   // Fast and highly accurate cloud ASR
+  groqTurbo:  0.80,   // Whisper Large v3 Turbo
+  google:     0.80,   // Standard cloud ASR
+  groq:       2.00,   // Whisper Large v3 (performed best at detecting wrong tones)
+  sensevoice: 1.00,   // Stub
+  whisper:    0.30,   // In-browser ASR (weak context)
+  classifier: 0.10,   // DistilHuBERT (needs retraining)
+  pitch:      2.50,   // Pure acoustic contour matching — crucial for catching actual mispronunciations
 }
 
 export class ToneDetector {
