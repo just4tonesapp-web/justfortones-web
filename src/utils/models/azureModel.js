@@ -57,20 +57,9 @@ export async function detectToneWithAzure(samples, sampleRate, targetBase = null
   const speechConfig = sdk.SpeechConfig.fromSubscription(speechKey, speechRegion)
   speechConfig.speechRecognitionLanguage = 'zh-CN'
 
-  // Configure pronunciation assessment
-  // Use referenceChar if available for more accurate scoring
-  const refText = referenceChar || '他' // fallback to a common character
-  const pronConfig = new sdk.PronunciationAssessmentConfig(
-    refText,
-    sdk.PronunciationAssessmentGradingSystem.HundredMark,
-    sdk.PronunciationAssessmentGranularity.Phoneme,
-    false
-  )
-  pronConfig.phonemeAlphabet = 'SAPI'
-  pronConfig.enableProsodyAssessment = true
-
   const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig)
-  pronConfig.applyTo(recognizer)
+  // Pronunciation Assessment disabled because it forces alignment to referenceChar
+  // which biases the model to always return the target tone even when user says it wrong.
 
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
@@ -89,91 +78,41 @@ export async function detectToneWithAzure(samples, sampleRate, targetBase = null
             return
           }
 
-          // Parse detailed JSON for phoneme-level tone data
-          const jsonStr = result.properties.getProperty(
-            sdk.PropertyId.SpeechServiceResponse_JsonResult
-          )
-          if (!jsonStr) {
-            recognizer.close()
-            resolve(null)
-            return
-          }
-
-          const detail = JSON.parse(jsonStr)
-          const nbest = detail?.NBest?.[0]
-          if (!nbest?.Words?.length) {
-            recognizer.close()
-            resolve(null)
-            return
-          }
-
-          // Look through all words/phonemes for tone phonemes
-          for (const word of nbest.Words) {
-            if (!word.Phonemes) continue
-            for (const phoneme of word.Phonemes) {
-              // Match tone digit: exact "4", trailing "yue4", or spaced "si 4"
-              const exactMatch = /^[1-4]$/.test(phoneme.Phoneme)
-              const trailingMatch = phoneme.Phoneme?.match?.(/\s?(\d)$/)
-
-              if (exactMatch || trailingMatch) {
-                const detectedTone = exactMatch
-                  ? parseInt(phoneme.Phoneme)
-                  : parseInt(trailingMatch[1])
-
-                if (detectedTone < 1 || detectedTone > 4) continue
-
-                const accuracy = phoneme.PronunciationAssessment?.AccuracyScore || 0
-
-                // Also check NBestPhonemes for the actual distribution
-                const nbestPhonemes = phoneme.PronunciationAssessment?.NBestPhonemes
-                if (nbestPhonemes) {
-                  const topTone = nbestPhonemes.find(p => /^[1-4]$/.test(p.Phoneme))
-                    || nbestPhonemes.find(p => { const m = p.Phoneme?.match?.(/\s?(\d)$/); return m && parseInt(m[1]) >= 1 && parseInt(m[1]) <= 4 })
-                  if (topTone) {
-                    const toneNum = /^[1-4]$/.test(topTone.Phoneme)
-                      ? parseInt(topTone.Phoneme)
-                      : parseInt(topTone.Phoneme.match(/\s?(\d)$/)[1])
-                    console.log(`[Azure] Tone: T${toneNum} (score=${topTone.Score}), dist: ${nbestPhonemes.filter(p => /\d$/.test(p.Phoneme)).map(p => `${p.Phoneme}:${p.Score}`).join(' ')}`)
-                    recognizer.close()
-                    resolve(toneNum)
-                    return
-                  }
-                }
-
-                console.log(`[Azure] Tone: T${detectedTone} (accuracy=${accuracy})`)
-                recognizer.close()
-                resolve(detectedTone)
-                return
-              }
-            }
-          }
-
-          // Fallback: use recognized text + CHAR_TONE_MAP (same as Groq/Google/Deepgram)
           const text = result.text?.trim()
-          if (text) {
-            console.log(`[Azure] No tone phoneme found, text: "${text}" — trying CHAR_TONE_MAP`)
-            const chars = [...text]
-            if (targetBase) {
-              for (const char of chars) {
-                const entry = CHAR_TONE_MAP[char]
-                if (entry && entry.base === targetBase && entry.tone !== 5) {
-                  console.log(`[Azure] Fallback: "${char}" → T${entry.tone}`)
-                  recognizer.close()
-                  resolve(entry.tone)
-                  return
-                }
-              }
-            }
+          if (!text) {
+            recognizer.close()
+            resolve(null)
+            return
+          }
+
+          console.log(`[Azure] Recognized text: "${text}"`)
+          const chars = [...text]
+          
+          // First try to match the base syllable
+          if (targetBase) {
             for (const char of chars) {
               const entry = CHAR_TONE_MAP[char]
-              if (entry && entry.tone !== 5) {
-                console.log(`[Azure] Fallback: "${char}" → T${entry.tone}`)
+              if (entry && entry.base === targetBase && entry.tone !== 5) {
+                console.log(`[Azure] Matched base "${targetBase}": "${char}" → T${entry.tone}`)
                 recognizer.close()
                 resolve(entry.tone)
                 return
               }
             }
           }
+          
+          // Fallback to any recognized character with a valid tone
+          for (const char of chars) {
+            const entry = CHAR_TONE_MAP[char]
+            if (entry && entry.tone !== 5) {
+              console.log(`[Azure] Fallback match: "${char}" → T${entry.tone}`)
+              recognizer.close()
+              resolve(entry.tone)
+              return
+            }
+          }
+
+          console.log(`[Azure] No mapped character found in text: "${text}"`)
           recognizer.close()
           resolve(null)
         } catch (e) {

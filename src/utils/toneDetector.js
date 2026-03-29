@@ -239,7 +239,7 @@ function trimSilence(samples, sampleRate, rmsThreshold = 0.008) {
     let sum = 0
     for (let j = i; j < i + frameSize; j++) sum += samples[j] * samples[j]
     if (Math.sqrt(sum / frameSize) > rmsThreshold) {
-      start = Math.max(0, i - frameSize) // keep one frame of pre-roll
+      start = Math.max(0, i - 5 * frameSize) // keep 100ms of pre-roll
       break
     }
   }
@@ -248,7 +248,7 @@ function trimSilence(samples, sampleRate, rmsThreshold = 0.008) {
     let sum = 0
     for (let j = i; j < i + frameSize; j++) sum += samples[j] * samples[j]
     if (Math.sqrt(sum / frameSize) > rmsThreshold) {
-      end = Math.min(samples.length, i + 2 * frameSize)
+      end = Math.min(samples.length, i + 5 * frameSize) // keep 100ms of post-roll
       break
     }
   }
