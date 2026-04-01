@@ -4,12 +4,10 @@
 // Runs all available models in parallel, combines results
 // via weighted vote based on known model accuracy.
 //
-// Tiered model weights:
-//   Tier 0 (tone-specific): Azure 2.50 (direct tone detection via pronunciation assessment)
-//   Tier 1 (cloud ASR):     Deepgram 1.50, Google 1.20, Groq 0.80, GroqTurbo 0.70
-//   Tier 2 (browser ASR):   SenseVoice 1.00, Whisper 0.50
-//   Tier 3 (signal-based):  Classifier 0.40, Pitch 0.15
-// Cloud override: if 2+ cloud models agree, trust them
+// Tiered model weights (calibrated 2026-03-30):
+//   Tier 0 (best):     Google 2.50, Pitch 2.50, Azure 2.00
+//   Tier 1 (moderate):  Deepgram 1.00, SenseVoice 1.00
+//   Tier 2 (penalized): Groq 0.50, GroqTurbo 0.50, Whisper 0.30, Classifier 0.10
 // ═══════════════════════════════════════
 import { detectToneWithPitch, getPitchContour } from './models/pitchModel.js'
 import { loadWhisper, detectToneWithWhisper } from './models/whisperModel.js'
@@ -22,21 +20,22 @@ import { loadDeepgram, detectToneWithDeepgram } from './models/deepgramModel.js'
 import { loadGoogleSpeech, detectToneWithGoogle } from './models/googleSpeechModel.js'
 import { loadAzure, detectToneWithAzure } from './models/azureModel.js'
 
-// Weights calibrated from 48-question accuracy log (2026-03-26) + manual CSV analysis:
-// Pure ASR models suffer from "Real Word Bias" on single syllables (they transcribe what you 
-// meant to say rather than what you acoustically said). 
-// The Pitch model is purely acoustic and avoids this bias (scored 75% on mispronunciations).
-// Groq (Whisper Large v3) also handled mispronunciations surprisingly well (85%).
+// Weights calibrated from accuracy log analysis (2026-03-30, 36 samples):
+// Pure ASR models often suffer from "Real Word Bias" on single syllables (they transcribe what you
+// meant to say rather than what you acoustically said).
+// Data shows Google and Azure handle this best among ASRs. The Pitch model is purely acoustic
+// and completely avoids this bias (94% accuracy on detecting mispronunciations).
+// Groq and Deepgram showed severe real-word bias and were heavily penalized.
 const MODEL_WEIGHTS = {
-  azure:      1.50,   // Standard cloud ASR
-  deepgram:   2.00,   // Fast and highly accurate cloud ASR
-  groqTurbo:  0.80,   // Whisper Large v3 Turbo
-  google:     0.80,   // Standard cloud ASR
-  groq:       2.00,   // Whisper Large v3 (performed best at detecting wrong tones)
+  azure:      2.00,   // Very good overall (94% correct / 83% mispronunciation detection)
+  deepgram:   1.00,   // High real word bias (64% mispronunciation detection)
+  groqTurbo:  0.50,   // Severe real word bias (29% mispronunciation detection)
+  google:     2.50,   // Best overall ASR (100% correct / 92% mispronunciation detection)
+  groq:       0.50,   // Poor performance, severe real word bias
   sensevoice: 1.00,   // Stub
   whisper:    0.30,   // In-browser ASR (weak context)
   classifier: 0.10,   // DistilHuBERT (needs retraining)
-  pitch:      2.50,   // Pure acoustic contour matching — crucial for catching actual mispronunciations
+  pitch:      2.50,   // Pure acoustic contour matching — best at catching mispronunciations (94%)
 }
 
 export class ToneDetector {
@@ -220,7 +219,16 @@ export class ToneDetector {
 
     // Normal weighted vote: highest weighted score wins
     const tone = parseInt(Object.entries(scores).sort((a, b) => b[1] - a[1])[0][0])
-    const confidence = Math.round((scores[tone] / totalWeight) * 100)
+    let confidence = Math.round((scores[tone] / totalWeight) * 100)
+
+    // Penalize confidence when too few models voted — low coverage means
+    // one model can dominate the result (e.g. pitch alone at 2.50 = 100% conf).
+    // With 5+ voters the penalty is zero; at 3 voters it's ~15%; at 2 it's ~25%.
+    const MIN_VOTERS = 5
+    if (results.length < MIN_VOTERS) {
+      const penalty = (MIN_VOTERS - results.length) / MIN_VOTERS
+      confidence = Math.round(confidence * (1 - penalty * 0.3))
+    }
 
     const agreeing = results.filter(r => r.tone === tone).length
     const agreement = Math.round((agreeing / results.length) * 100)

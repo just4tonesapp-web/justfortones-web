@@ -145,18 +145,27 @@ function scoreTone(contour, toneNum) {
       return 0.5 * highness + 0.5 * flatness
     }
     case 2: {
-      // Rising: end clearly higher than start
+      // Rising (35): end higher than start, with MONOTONIC rise — no significant dip.
+      // Key distinction from T3: T2 rises steadily, T3 dips first then rises.
       const riseScore = Math.max(0, (endMean - startMean) / 4)
-      return 0.5 * Math.max(0, pearson) + 0.5 * riseScore
+      // Penalize if there's a mid-contour dip (that's T3 territory)
+      const hasDip = minPos >= 0.2 && minPos <= 0.7 && (startMean - minVal) > 0.5
+      const dipPenalty = hasDip ? 0.3 : 0
+      // Bonus: T2 minimum should be near the start (first 30%)
+      const minAtStart = minPos <= 0.3 ? 0.15 : 0
+      return 0.5 * Math.max(0, pearson) + 0.5 * riseScore - dipPenalty + minAtStart
     }
     case 3: {
-      // Low-dipping (214): valley must be in middle third, then rises above start level.
-      // Key distinction from T2: minimum is not at start or end.
+      // Low-dipping (214): valley in middle, then rises back up.
+      // Key distinction from T2: must dip BELOW start level before rising.
       // Key distinction from T4: the contour rises back up after the dip.
-      const hasMidDip = minPos >= 0.25 && minPos <= 0.75 // strict middle-third requirement
+      const hasMidDip = minPos >= 0.2 && minPos <= 0.75
       const recovers  = endMean > minVal + 0.5           // must rise after the dip
-      const dipScore  = (hasMidDip && recovers) ? Math.max(0, (endMean - minVal) / 4) : 0
-      return 0.5 * Math.max(0, pearson) + 0.5 * dipScore
+      const dipsBelow = (startMean - minVal) > 0.3        // must dip below where it started
+      const dipScore  = (hasMidDip && recovers && dipsBelow) ? Math.max(0, (endMean - minVal) / 4) : 0
+      // Bonus for classic 214 shape: starts mid, goes low, comes back high
+      const classicShape = (startMean < 3.5 && minVal < 2.5 && endMean > 2.5) ? 0.1 : 0
+      return 0.5 * Math.max(0, pearson) + 0.5 * dipScore + classicShape
     }
     case 4: {
       // High-falling: start clearly higher than end

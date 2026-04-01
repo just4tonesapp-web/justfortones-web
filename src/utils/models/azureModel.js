@@ -61,7 +61,7 @@ export async function detectToneWithAzure(samples, sampleRate, targetBase = null
   // Pronunciation Assessment disabled because it forces alignment to referenceChar
   // which biases the model to always return the target tone even when user says it wrong.
 
-  return new Promise((resolve) => {
+  const attemptRecognition = () => new Promise((resolve) => {
     const timeout = setTimeout(() => {
       recognizer.close()
       resolve(null)
@@ -87,7 +87,7 @@ export async function detectToneWithAzure(samples, sampleRate, targetBase = null
 
           console.log(`[Azure] Recognized text: "${text}"`)
           const chars = [...text]
-          
+
           // First try to match the base syllable
           if (targetBase) {
             for (const char of chars) {
@@ -100,7 +100,7 @@ export async function detectToneWithAzure(samples, sampleRate, targetBase = null
               }
             }
           }
-          
+
           // Fallback to any recognized character with a valid tone
           for (const char of chars) {
             const entry = CHAR_TONE_MAP[char]
@@ -127,6 +127,50 @@ export async function detectToneWithAzure(samples, sampleRate, targetBase = null
         recognizer.close()
         resolve(null)
       }
+    )
+  })
+
+  // Try up to 2 times — Azure sometimes returns null on valid audio
+  let result = await attemptRecognition()
+  if (result !== null) return result
+
+  // Retry with fresh recognizer
+  console.log('[Azure] Retrying recognition...')
+  const pushStream2 = sdk.AudioInputStream.createPushStream(format)
+  pushStream2.write(int16.buffer)
+  pushStream2.close()
+  const audioConfig2 = sdk.AudioConfig.fromStreamInput(pushStream2)
+  const recognizer2 = new sdk.SpeechRecognizer(speechConfig, audioConfig2)
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => { recognizer2.close(); resolve(null) }, 10000)
+    recognizer2.recognizeOnceAsync(
+      (result) => {
+        clearTimeout(timeout)
+        try {
+          if (result.reason !== sdk.ResultReason.RecognizedSpeech) {
+            recognizer2.close(); resolve(null); return
+          }
+          const text = result.text?.trim()
+          if (!text) { recognizer2.close(); resolve(null); return }
+          console.log(`[Azure] Retry recognized: "${text}"`)
+          const chars = [...text]
+          if (targetBase) {
+            for (const char of chars) {
+              const entry = CHAR_TONE_MAP[char]
+              if (entry && entry.base === targetBase && entry.tone !== 5) {
+                recognizer2.close(); resolve(entry.tone); return
+              }
+            }
+          }
+          for (const char of chars) {
+            const entry = CHAR_TONE_MAP[char]
+            if (entry && entry.tone !== 5) { recognizer2.close(); resolve(entry.tone); return }
+          }
+          recognizer2.close(); resolve(null)
+        } catch (e) { recognizer2.close(); resolve(null) }
+      },
+      () => { clearTimeout(timeout); recognizer2.close(); resolve(null) }
     )
   })
 }

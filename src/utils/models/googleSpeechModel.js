@@ -64,31 +64,41 @@ export async function detectToneWithGoogle(samples, sampleRate, targetBase = nul
   }
 
   let data
-  try {
-    const response = await fetch(`${GOOGLE_API_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
+  const maxRetries = 2
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 8000)
 
-    if (response.status === 401) {
-      console.error('[Google] Invalid API key — disabling for session')
-      apiKey = null
-      return null
-    }
-    if (response.status === 403 || response.status === 429) {
-      console.warn(`[Google] ${response.status} — rate limited or quota exceeded, skipping`)
-      return null
-    }
-    if (!response.ok) {
-      console.warn(`[Google] HTTP ${response.status}`)
-      return null
-    }
+      const response = await fetch(`${GOOGLE_API_URL}?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+      clearTimeout(timeout)
 
-    data = await response.json()
-  } catch (e) {
-    console.warn('[Google] Request failed:', e.message)
-    return null
+      if (response.status === 401) {
+        console.error('[Google] Invalid API key — disabling for session')
+        apiKey = null
+        return null
+      }
+      if (response.status === 403 || response.status === 429) {
+        console.warn(`[Google] ${response.status} — rate limited or quota exceeded, skipping`)
+        return null
+      }
+      if (!response.ok) {
+        console.warn(`[Google] HTTP ${response.status}`)
+        if (attempt < maxRetries) continue
+        return null
+      }
+
+      data = await response.json()
+      break
+    } catch (e) {
+      console.warn(`[Google] Request failed (attempt ${attempt + 1}/${maxRetries + 1}):`, e.message)
+      if (attempt >= maxRetries) return null
+    }
   }
 
   // Google returns results[].alternatives[].transcript
