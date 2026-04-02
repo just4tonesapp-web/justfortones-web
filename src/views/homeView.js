@@ -1,20 +1,33 @@
 // ═══════════════════════════════════════
 // Home view – Diagnostic landing page
+// Shows test progress and routes to appropriate next step
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
 import { supabase } from '../supabaseClient.js'
+import { getDiagnosticState } from '../services/progressService.js'
 
-export function homeView(container) {
+export async function homeView(container) {
   const isGuest = sessionStorage.getItem('j4t_guest') === '1'
+
+  // Get diagnostic progress
+  let state = { step1Done: false, step2Done: false, step3Done: false,
+                passedA: false, passedB: false, passedC: false, passedD: false,
+                passedX: false, passedY: false, passedZ: false }
+  try { state = await getDiagnosticState() } catch (e) { /* first visit */ }
+
+  const check = (passed) => passed ? '✅' : ''
 
   container.innerHTML = `
     <div class="app-shell">
       <header class="home-header">
         <div class="home-top-bar">
           <h1 class="home-title">Just4Tones</h1>
-          <button class="logout-btn" id="logout-btn" title="${isGuest ? 'Exit guest mode' : 'Log out'}">
-            ${isGuest ? '👤 Guest' : '🚪 Log out'}
-          </button>
+          <div class="home-top-actions">
+            <button class="top-btn" id="report-btn" title="View diagnostic report">📊</button>
+            <button class="logout-btn" id="logout-btn" title="${isGuest ? 'Exit guest mode' : 'Log out'}">
+              ${isGuest ? '👤 Guest' : '🚪 Log out'}
+            </button>
+          </div>
         </div>
         <p class="home-subtitle">Master the four tones of Mandarin Chinese</p>
       </header>
@@ -35,7 +48,7 @@ export function homeView(container) {
           <button class="step-card" id="go-test-a">
             <div class="step-num">A</div>
             <div class="step-body">
-              <h3>Single Syllable Tones</h3>
+              <h3>Single Syllable Tones ${check(state.passedA)}</h3>
               <p>Listen to one syllable and pick the correct tone</p>
               <span class="step-tag">Test A · 12 questions</span>
             </div>
@@ -44,9 +57,18 @@ export function homeView(container) {
           <button class="step-card" id="go-test-b">
             <div class="step-num">B</div>
             <div class="step-body">
-              <h3>Two-Syllable Tone Pairs</h3>
+              <h3>Two-Syllable Tone Pairs ${check(state.passedB)}</h3>
               <p>Listen to two syllables and identify both tones</p>
               <span class="step-tag">Test B · 12 questions</span>
+            </div>
+            <div class="step-arrow">→</div>
+          </button>
+          <button class="step-card practice-card" id="go-practice-rec">
+            <div class="step-num practice">🎧</div>
+            <div class="step-body">
+              <h3>Tone Recognition Practice</h3>
+              <p>Unlimited listening exercises to train your ear</p>
+              <span class="step-tag">Practice · no limit</span>
             </div>
             <div class="step-arrow">→</div>
           </button>
@@ -58,33 +80,54 @@ export function homeView(container) {
           <button class="step-card" id="go-test-c">
             <div class="step-num">C</div>
             <div class="step-body">
-              <h3>Single Character Pronunciation</h3>
+              <h3>Single Character Pronunciation ${check(state.passedC)}</h3>
               <p>See a character, record yourself saying it</p>
               <span class="step-tag">Test C · 12 questions</span>
             </div>
             <div class="step-arrow">→</div>
           </button>
-          <button class="step-card locked" id="step-d" disabled>
+          <button class="step-card" id="go-test-d">
             <div class="step-num">D</div>
             <div class="step-body">
-              <h3>Two-Character Pronunciation</h3>
+              <h3>Two-Character Pronunciation ${check(state.passedD)}</h3>
               <p>Pronounce two-syllable combinations</p>
-              <span class="step-tag">Test D · coming soon</span>
+              <span class="step-tag">Test D · 12 questions</span>
             </div>
-            <div class="step-lock">🔒</div>
+            <div class="step-arrow">→</div>
+          </button>
+          <button class="step-card practice-card" id="go-practice-pro">
+            <div class="step-num practice">🎤</div>
+            <div class="step-body">
+              <h3>Tone Production Practice</h3>
+              <p>Record and get feedback on your pronunciation</p>
+              <span class="step-tag">Practice · no limit</span>
+            </div>
+            <div class="step-arrow">→</div>
           </button>
         </div>
 
-        <!-- Step 3: Character tones (locked) -->
-        <button class="step-card locked animate-in" id="step-3" style="animation-delay:.3s" disabled>
-          <div class="step-num">3</div>
-          <div class="step-body">
-            <h3>Do you know the character tones?</h3>
-            <p>Match tones to the most common characters</p>
-            <span class="step-tag">Tests X, Y, Z · coming soon</span>
-          </div>
-          <div class="step-lock">🔒</div>
-        </button>
+        <!-- Step 3: Character tones -->
+        <div class="step-group animate-in" style="animation-delay:.3s">
+          <div class="step-group-label">Step 3 · Do you know the character tones?</div>
+          <button class="step-card" id="go-test-xyz">
+            <div class="step-num">X</div>
+            <div class="step-body">
+              <h3>Character Tone Knowledge ${check(state.passedX && state.passedY && state.passedZ)}</h3>
+              <p>Match tones to the most common characters</p>
+              <span class="step-tag">Tests X, Y, Z · 36 questions</span>
+            </div>
+            <div class="step-arrow">→</div>
+          </button>
+          <button class="step-card practice-card" id="go-practice-char">
+            <div class="step-num practice">📚</div>
+            <div class="step-body">
+              <h3>Character Batch Learning</h3>
+              <p>Learn character tones in batches of 50</p>
+              <span class="step-tag">Practice · 200 characters</span>
+            </div>
+            <div class="step-arrow">→</div>
+          </button>
+        </div>
       </div>
 
     </div>
@@ -94,6 +137,12 @@ export function homeView(container) {
   document.getElementById('go-test-a').addEventListener('click', () => navigate('/test-a'))
   document.getElementById('go-test-b').addEventListener('click', () => navigate('/test-b'))
   document.getElementById('go-test-c').addEventListener('click', () => navigate('/test-c'))
+  document.getElementById('go-test-d').addEventListener('click', () => navigate('/test-d'))
+  document.getElementById('go-test-xyz').addEventListener('click', () => navigate('/test-xyz'))
+  document.getElementById('report-btn').addEventListener('click', () => navigate('/report'))
+  document.getElementById('go-practice-rec').addEventListener('click', () => navigate('/practice-recognition'))
+  document.getElementById('go-practice-pro').addEventListener('click', () => navigate('/practice-production'))
+  document.getElementById('go-practice-char').addEventListener('click', () => navigate('/practice-characters'))
 
   document.getElementById('logout-btn').addEventListener('click', async () => {
     if (isGuest) {
@@ -125,9 +174,27 @@ export function homeView(container) {
       -webkit-text-fill-color: transparent;
       background-clip: text;
     }
-    .logout-btn {
+    .home-top-actions {
       position: absolute;
       right: 0;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .top-btn {
+      background: var(--surface);
+      border: 1px solid var(--card-border);
+      color: var(--text-secondary);
+      padding: 6px 10px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .top-btn:hover {
+      border-color: var(--accent);
+    }
+    .logout-btn {
       background: var(--surface);
       border: 1px solid var(--card-border);
       color: var(--text-secondary);
@@ -208,6 +275,12 @@ export function homeView(container) {
       opacity: 0.5;
       cursor: default;
     }
+    .step-card.practice-card {
+      background: rgba(56,189,248,0.02);
+    }
+    .step-card.practice-card:hover:not(.locked) {
+      background: rgba(56,189,248,0.06);
+    }
 
     .step-num {
       width: 36px; height: 36px;
@@ -217,6 +290,11 @@ export function homeView(container) {
       display: flex; align-items: center; justify-content: center;
       font-weight: 700; font-size: 0.85rem; color: var(--accent);
       flex-shrink: 0;
+    }
+    .step-num.practice {
+      background: rgba(129,140,248,0.1);
+      border-color: rgba(129,140,248,0.3);
+      font-size: 1.1rem;
     }
     .step-body { flex: 1; }
     .step-body h3 { font-size: 0.92rem; margin-bottom: 3px; }

@@ -10,6 +10,11 @@ import { testAView } from './views/testAView.js'
 import { testBView } from './views/testBView.js'
 import { testCView } from './views/testCView.js'
 import { testDView } from './views/testDView.js'
+import { testXYZView } from './views/testXYZView.js'
+import { diagnosticReportView } from './views/diagnosticReportView.js'
+import { practiceRecView } from './views/practiceRecView.js'
+import { practiceProView } from './views/practiceProView.js'
+import { practiceCharView } from './views/practiceCharView.js'
 
 // ── Auth state ──
 let currentUser = null
@@ -38,9 +43,11 @@ route('/test-b', guarded(testBView))
 route('/test-c', guarded(testCView))
 route('/test-d', guarded(testDView))
 
-// Future routes:
-// route('/test-d', guarded(testDView))
-// route('/practice-recognition', guarded(practiceRecView))
+route('/test-xyz', guarded(testXYZView))
+route('/report', guarded(diagnosticReportView))
+route('/practice-recognition', guarded(practiceRecView))
+route('/practice-production', guarded(practiceProView))
+route('/practice-characters', guarded(practiceCharView))
 
 // ── Init: check session then start ──
 async function init() {

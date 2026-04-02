@@ -9,6 +9,7 @@ import { speakChinese } from '../utils/audio.js'
 import { AudioEngine } from '../utils/audioEngine.js'
 import { toneDetector } from '../utils/toneDetector.js'
 import { supabase } from '../supabaseClient.js'
+import { saveResult } from '../services/progressService.js'
 import { getMelSpectrogramImage } from '../utils/models/tonetModel.js'
 // WebSpeech disabled: coi-serviceworker's COOP header blocks Web Speech API
 // import { isWebSpeechAvailable, startWebSpeech, stopWebSpeech } from '../utils/models/webSpeechModel.js'
@@ -639,6 +640,9 @@ export function testCView(container) {
     const pct = Math.round((score / TOTAL) * 100)
     const passed = score >= PASS_SCORE
 
+    // Save result
+    saveResult('C', score, TOTAL, { answers })
+
     // Tone breakdown
     const toneColors = { 1: 'var(--tone1)', 2: 'var(--tone2)', 3: 'var(--tone3)', 4: 'var(--tone4)' }
     const toneNames = { 1: '1st (High)', 2: '2nd (Rising)', 3: '3rd (Dip)', 4: '4th (Fall)' }
@@ -709,11 +713,9 @@ export function testCView(container) {
     document.getElementById('tc-retry').addEventListener('click', startTest)
     document.getElementById('tc-continue').addEventListener('click', () => {
       if (passed) {
-        // TODO: navigate('/test-x') — Step 3
-        alert('Next: Step 3 — Character Tone Knowledge (Tests X/Y/Z) — coming soon!')
+        navigate('/test-d')
       } else {
-        // TODO: navigate('/practice-pronunciation') — Interface III
-        alert('Next: Tone Pronunciation Exercises (Interface III) — coming soon!')
+        navigate('/practice-production')
       }
     })
   }

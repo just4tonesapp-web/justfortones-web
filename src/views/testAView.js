@@ -4,6 +4,7 @@
 import { navigate } from '../router.js'
 import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle } from '../utils/pinyin.js'
 import { speakChinese } from '../utils/audio.js'
+import { saveResult } from '../services/progressService.js'
 
 const TOTAL = 12
 const PASS_SCORE = 10
@@ -204,6 +205,9 @@ export function testAView(container) {
     const passed = score >= PASS_SCORE
     const totalTime = Date.now() - testStart
 
+    // Save result
+    saveResult('A', score, TOTAL, { answers, totalTime })
+
     // Tone stats
     const toneColors = { 1:'var(--tone1)', 2:'var(--tone2)', 3:'var(--tone3)', 4:'var(--tone4)' }
     const toneNames = { 1:'1st (High)', 2:'2nd (Rising)', 3:'3rd (Dip)', 4:'4th (Fall)' }
@@ -277,8 +281,7 @@ export function testAView(container) {
       if (passed) {
         navigate('/test-b')
       } else {
-        // TODO: navigate('/practice-recognition') — Interface II
-        alert('Next: Tone Recognition Exercises (Interface II) — coming soon!')
+        navigate('/practice-recognition')
       }
     })
   }

@@ -5,6 +5,7 @@
 import { navigate } from '../router.js'
 import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle, makeTwoSyllableItem } from '../utils/pinyin.js'
 import { speakChinese } from '../utils/audio.js'
+import { saveResult } from '../services/progressService.js'
 
 const TOTAL = 12
 const PASS_SCORE = 10
@@ -246,6 +247,9 @@ export function testBView(container) {
     const pct = Math.round((score / TOTAL) * 100)
     const passed = score >= PASS_SCORE
 
+    // Save result
+    saveResult('B', score, TOTAL, { answers })
+
     // Detail rows
     let details = ''
     answers.forEach((a, i) => {
@@ -298,8 +302,7 @@ export function testBView(container) {
       if (passed) {
         navigate('/test-c')
       } else {
-        // TODO: navigate('/practice-recognition') — Interface II
-        alert('Next: Tone Recognition Exercises (Interface II) — coming soon!')
+        navigate('/practice-recognition')
       }
     })
   }
