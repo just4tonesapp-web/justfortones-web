@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════
 // Audio helpers: tone synthesis & speech
 // ═══════════════════════════════════════
+import { hasRecording } from './recordingsManifest.js'
 
 let audioCtx = null
 
@@ -93,4 +94,37 @@ export function speakChinese(char, tone, onEnd) {
 if ('speechSynthesis' in window) {
   speechSynthesis.getVoices()
   speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices()
+}
+
+/**
+ * Play the human-recorded m4a for a given pinyin syllable + tone.
+ * Falls back to synthesised tone if the file is missing or fails to load.
+ *
+ * @param {string} syllable  bare pinyin (e.g. 'ma', 'xiao')
+ * @param {number} tone      1-4
+ * @param {Function} [onEnd] callback fired when playback (or fallback) finishes
+ */
+export function playSyllable(syllable, tone, onEnd) {
+  if (!hasRecording(syllable, tone)) {
+    const d = playToneSynth(tone)
+    setTimeout(() => onEnd?.(), d * 1000 + 100)
+    return
+  }
+  const url = `${import.meta.env.BASE_URL}audio/syllables/${syllable}${tone}.m4a`
+  const audio = new Audio(url)
+  let done = false
+  const finish = () => { if (done) return; done = true; onEnd?.() }
+  audio.addEventListener('ended', finish)
+  audio.addEventListener('error', () => {
+    if (done) return
+    done = true
+    const d = playToneSynth(tone)
+    setTimeout(() => onEnd?.(), d * 1000 + 100)
+  })
+  audio.play().catch(() => {
+    if (done) return
+    done = true
+    const d = playToneSynth(tone)
+    setTimeout(() => onEnd?.(), d * 1000 + 100)
+  })
 }

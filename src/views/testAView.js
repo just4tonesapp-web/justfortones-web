@@ -2,8 +2,9 @@
 // Test A – Tone Listening Quiz (12 items)
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
-import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle } from '../utils/pinyin.js'
-import { speakChinese } from '../utils/audio.js'
+import { SYLLABLE_POOL, applyTone, shuffle } from '../utils/pinyin.js'
+import { playSyllable } from '../utils/audio.js'
+import { hasRecording } from '../utils/recordingsManifest.js'
 import { saveResult } from '../services/progressService.js'
 
 const TOTAL = 12
@@ -20,10 +21,18 @@ export function testAView(container) {
   let testStart = 0
 
   // ── Generate 12 questions (3 per tone, random syllables) ──
+  // Only pick syllables that have a recorded m4a for the chosen tone,
+  // so every question plays a real human voice.
   function generate() {
     const tones = shuffle([1,1,1, 2,2,2, 3,3,3, 4,4,4])
-    const syls = shuffle(SYLLABLE_POOL)
-    questions = tones.map((t, i) => ({ syllable: syls[i], tone: t }))
+    const used = new Set()
+    questions = tones.map((t) => {
+      const candidates = SYLLABLE_POOL.filter(s => !used.has(s) && hasRecording(s, t))
+      const pool = candidates.length ? candidates : SYLLABLE_POOL.filter(s => !used.has(s))
+      const syllable = pool[Math.floor(Math.random() * pool.length)]
+      used.add(syllable)
+      return { syllable, tone: t }
+    })
   }
 
   // ── Mount ──
@@ -144,7 +153,7 @@ export function testAView(container) {
     const btn = $('ta-play')
     btn.classList.add('playing')
     $('ta-hint').textContent = 'Listening…'
-    speakChinese(getTTSChar(q.syllable, q.tone), q.tone, () => {
+    playSyllable(q.syllable, q.tone, () => {
       btn.classList.remove('playing')
       $('ta-hint').textContent = 'Tap to replay'
     })

@@ -1,6 +1,6 @@
 # Just4Tones — Dev Context & Progress
 
-Last updated: 2026-04-02
+Last updated: 2026-04-11
 
 ---
 
@@ -203,3 +203,27 @@ npm run dev           # → http://localhost:5173/justfortones-web/
 - **Session 4** (2026-03-24): Ensemble v2 (tiered voting), Google + Azure integration
 - **Session 5** (2026-03-30): Weight recalibration from 36-sample accuracy analysis, retry logic, T2/T3 fix
 - **Session 6** (2026-04-01): Built all missing features — Test D, Tests X/Y/Z, Interfaces II/III/IV, diagnostic report, progress tracking. Unlocked all tests on home page. API cost analysis.
+- **Session 7** (2026-04-11): Integrated human-recorded audio for Test A & Test C. Applied Test C feedback doc.
+
+### Session 7 Details
+
+**Human recordings integration:**
+- Source: `Test A &C Single Syllables Sound Recordings/` folder (24 consonant rows × 4 tones per syllable)
+- 1,640 `.m4a` files (including _X "no real character" combos) copied to `public/audio/syllables/` (~141 MB)
+- Files named `{syllable}{tone}.m4a` (e.g. `ba1.m4a`, `xiao3.m4a`, `an2.m4a`)
+- `_X` suffix stripped on copy — all combos treated as valid recordings
+
+**New files:**
+- `src/utils/recordingsManifest.js` — auto-generated manifest of all 1,640 available syllable+tone combos. Exports `SYLLABLES_BY_TONE`, `RECORDED_COMBOS` Set, `hasRecording(syl, tone)`.
+- `src/utils/testCFeedback.js` — feedback message pools from "Test C feedback.docx": graded praise (high/mid/low confidence), "almost" encouragement, per-tone reminders with 3 variations each (A/B/C).
+
+**Modified files:**
+- `src/utils/audio.js` — added `playSyllable(syllable, tone, onEnd)`: plays from `public/audio/syllables/`, falls back to `playToneSynth()` on error. Imports `hasRecording` from manifest.
+- `src/views/testAView.js` — uses `playSyllable()` instead of `speakChinese()`; `generate()` now filters `SYLLABLE_POOL` to combos with recordings via `hasRecording()`.
+- `src/views/testCView.js` — `listenExample()` uses `playSyllable(q.base, q.tone)` instead of `speakChinese(q.char)`; correct answers show graded praise via `pickPraise(confidence)`; wrong answers show tone-specific reminder + coach variation via `buildWrongFeedback(tone, pitchAgreed)` in a new `tc-coach-msg` panel.
+- `.gitignore` — excludes source recordings folder and feedback docx.
+
+**Not yet done / open items:**
+- Test C "retry" per question not implemented — the feedback doc's Variation A/B/C suggest re-attempts, but currently one random variation is shown per wrong answer. Could add a "Try Again" button that cycles through variations.
+- `npm install` needed before `npm run deploy` (node_modules not present).
+- First deploy will be slow due to ~141 MB of new audio assets.

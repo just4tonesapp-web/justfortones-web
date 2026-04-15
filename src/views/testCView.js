@@ -5,12 +5,13 @@
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
 import { applyTone, shuffle } from '../utils/pinyin.js'
-import { speakChinese } from '../utils/audio.js'
+import { playSyllable } from '../utils/audio.js'
 import { AudioEngine } from '../utils/audioEngine.js'
 import { toneDetector } from '../utils/toneDetector.js'
 import { supabase } from '../supabaseClient.js'
 import { saveResult } from '../services/progressService.js'
 import { getMelSpectrogramImage } from '../utils/models/tonetModel.js'
+import { pickPraise, buildWrongFeedback } from '../utils/testCFeedback.js'
 // WebSpeech disabled: coi-serviceworker's COOP header blocks Web Speech API
 // import { isWebSpeechAvailable, startWebSpeech, stopWebSpeech } from '../utils/models/webSpeechModel.js'
 
@@ -331,6 +332,8 @@ export function testCView(container) {
     $('tc-q-result').classList.add('hidden')
     $('tc-judges-wrap').classList.add('hidden')
     $('tc-confirm-wrap').classList.add('hidden')
+    const coachEl = document.getElementById('tc-coach-msg')
+    if (coachEl) coachEl.style.display = 'none'
     pendingLogEntry = null
     $('tc-listen').disabled = false
 
@@ -346,7 +349,7 @@ export function testCView(container) {
     const btn = $('tc-listen')
     btn.textContent = '🔊 Playing…'
     btn.disabled = true
-    speakChinese(q.char, q.tone, () => {
+    playSyllable(q.base, q.tone, () => {
       btn.textContent = '🔊 Listen again'
       btn.disabled = false
     })
@@ -454,12 +457,18 @@ export function testCView(container) {
 
     const toneNames = { 1: '1st (High ‾)', 2: '2nd (Rising ↗)', 3: '3rd (Dip ↘↗)', 4: '4th (Falling ↘)' }
     let msg = ''
+    let coachMsg = ''
     if (!detectedTone) {
       msg = 'Could not detect a clear tone — try speaking louder'
     } else if (passed) {
-      msg = `Detected: ${toneNames[detectedTone]} · ${confText}`
+      msg = `${pickPraise(ensemble.confidence)} · Detected: ${toneNames[detectedTone]} · ${confText}`
     } else {
-      msg = `Detected ${toneNames[detectedTone]}, expected ${toneNames[q.tone]} · ${confText}`
+      // Pitch model agreement = "almost" feedback; otherwise full tone reminder
+      const pitchVote = ensemble.results.find(r => r.model === 'pitch')
+      const pitchAgreed = pitchVote && pitchVote.tone === q.tone
+      const fb = buildWrongFeedback(q.tone, pitchAgreed)
+      msg = `${fb.intro} (Detected ${toneNames[detectedTone]}, expected ${toneNames[q.tone]} · ${confText})`
+      coachMsg = fb.variation
     }
 
     // Show per-model breakdown
@@ -470,6 +479,21 @@ export function testCView(container) {
 
     $('tc-q-msg').textContent = msg
     $('tc-q-msg').title = modelBreakdown // tooltip with model details
+
+    // Coach line (tone-specific retry guidance) shown only on wrong answers
+    let coachEl = document.getElementById('tc-coach-msg')
+    if (!coachEl) {
+      coachEl = document.createElement('div')
+      coachEl.id = 'tc-coach-msg'
+      coachEl.style.cssText = 'font-size:0.85rem;color:var(--text-secondary);margin-top:8px;line-height:1.5;text-align:left;padding:10px 12px;background:var(--surface);border-radius:var(--radius-sm)'
+      $('tc-q-result').insertBefore(coachEl, $('tc-q-msg').nextSibling)
+    }
+    if (coachMsg) {
+      coachEl.textContent = coachMsg
+      coachEl.style.display = ''
+    } else {
+      coachEl.style.display = 'none'
+    }
 
     // Show model breakdown below message
     let breakdownEl = document.getElementById('tc-model-breakdown')
@@ -484,7 +508,7 @@ export function testCView(container) {
     renderJudges(ensemble.results, q.tone)
     $('tc-q-result').classList.remove('hidden')
     $('tc-prog-score').textContent = `Score: ${score}`
-    showToast(passed)
+    showToast(passed, ensemble.confidence)
 
     // Prepare accuracy log entry and show confirm buttons
     const modelVotes = {}
@@ -619,16 +643,15 @@ export function testCView(container) {
     wrap.classList.remove('hidden')
   }
 
-  function showToast(ok) {
+  function showToast(ok, confidence = 0) {
     const t = $('tc-toast')
     t.className = 'feedback-toast'
-    const msgs = ok
-      ? ['Good tone! ✓', 'Nice job! ✓', 'Well said! ✓']
-      : ['Keep trying ✗', 'Almost! ✗', 'Try again ✗']
-    t.textContent = msgs[Math.floor(Math.random() * msgs.length)]
+    t.textContent = ok
+      ? `${pickPraise(confidence)} ✓`
+      : 'Try again ✗'
     t.classList.add(ok ? 'correct' : 'incorrect')
     requestAnimationFrame(() => t.classList.add('show'))
-    setTimeout(() => t.classList.remove('show'), 1200)
+    setTimeout(() => t.classList.remove('show'), 1400)
   }
 
   // ── Report ──

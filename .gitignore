@@ -21,3 +21,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Source recordings (deployed copy lives in public/audio/syllables/)
+Test A &C Single Syllables Sound Recordings/
+Test C feedback.docx
