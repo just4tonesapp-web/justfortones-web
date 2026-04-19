@@ -413,6 +413,15 @@ export function getTTSChar(syllable, tone) {
   return row?.[tone - 1] ?? null
 }
 
+/**
+ * Does a real Chinese character exist for this syllable + tone combo?
+ * Combos without a character (originally marked _X in recordings) return false.
+ */
+export function hasCharacter(syllable, tone) {
+  const row = SYLLABLE_TTS_CHAR[syllable]
+  return row?.[tone - 1] != null
+}
+
 /** Fisher-Yates shuffle (returns new array) */
 export function shuffle(arr) {
   const a = [...arr]

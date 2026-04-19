@@ -736,6 +736,8 @@ const scopedCSS = `
     padding: 18px 20px;
     width: 100%;
     font-family: inherit;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
   }
   .pc-batch-card:hover:not(.pc-locked) {
     border-color: var(--accent);
@@ -920,6 +922,11 @@ const scopedCSS = `
     font-size: 1rem;
     font-weight: 500;
     color: var(--text-primary);
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tone-choice-btn:focus-visible {
+    box-shadow: 0 0 0 2px var(--accent);
   }
   .tone-choice-btn:hover:not(.disabled) {
     border-color: var(--accent);

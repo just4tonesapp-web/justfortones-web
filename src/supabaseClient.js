@@ -13,6 +13,7 @@ export const supabase = (supabaseUrl && supabaseKey)
         onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
         signInWithPassword: async () => ({ error: { message: 'Supabase not configured' } }),
         signUp: async () => ({ error: { message: 'Supabase not configured' } }),
+        resetPasswordForEmail: async () => ({ error: { message: 'Supabase not configured' } }),
         signOut: async () => {},
       },
     }

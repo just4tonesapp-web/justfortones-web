@@ -7,6 +7,7 @@ import { navigate } from '../router.js'
 export function authView(container) {
   let isLogin = true
   let loading = false
+  let showForgot = false
 
   render()
 
@@ -26,6 +27,18 @@ export function authView(container) {
 
           <div id="auth-message" class="auth-message hidden"></div>
 
+          ${showForgot ? `
+          <div class="auth-form">
+            <div class="field">
+              <label for="auth-email">Email</label>
+              <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" />
+            </div>
+            <button class="btn btn-primary btn-lg auth-submit" id="auth-reset">
+              Send Reset Link
+            </button>
+            <button class="btn-link auth-back" id="auth-back">← Back to Log In</button>
+          </div>
+          ` : `
           <div class="auth-form">
             <div class="field">
               <label for="auth-email">Email</label>
@@ -38,7 +51,9 @@ export function authView(container) {
             <button class="btn btn-primary btn-lg auth-submit" id="auth-submit">
               ${isLogin ? 'Log In' : 'Create Account'}
             </button>
+            ${isLogin ? '<button class="btn-link auth-forgot" id="auth-forgot">Forgot password?</button>' : ''}
           </div>
+          `}
 
           <div class="auth-divider"><span>or</span></div>
 
@@ -57,18 +72,31 @@ export function authView(container) {
 
     // Bind events
     document.getElementById('tab-login').addEventListener('click', () => {
-      isLogin = true; render()
+      isLogin = true; showForgot = false; render()
     })
     document.getElementById('tab-signup').addEventListener('click', () => {
-      isLogin = false; render()
+      isLogin = false; showForgot = false; render()
     })
-    document.getElementById('auth-submit').addEventListener('click', handleSubmit)
     document.getElementById('auth-guest').addEventListener('click', handleGuest)
 
-    // Enter key submits
-    document.getElementById('auth-pass').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') handleSubmit()
-    })
+    if (showForgot) {
+      document.getElementById('auth-reset').addEventListener('click', handleReset)
+      document.getElementById('auth-back').addEventListener('click', () => {
+        showForgot = false; render()
+      })
+      document.getElementById('auth-email').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleReset()
+      })
+    } else {
+      document.getElementById('auth-submit').addEventListener('click', handleSubmit)
+      const forgotBtn = document.getElementById('auth-forgot')
+      if (forgotBtn) forgotBtn.addEventListener('click', () => {
+        showForgot = true; render()
+      })
+      document.getElementById('auth-pass').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleSubmit()
+      })
+    }
   }
 
   function showMessage(text, isError = false) {
@@ -115,9 +143,39 @@ export function authView(container) {
         setLoading(false)
       }
     } catch (err) {
-      showMessage(err.message || 'Something went wrong.', true)
+      showMessage(friendlyError(err.message), true)
       setLoading(false)
     }
+  }
+
+  async function handleReset() {
+    if (loading) return
+    const email = document.getElementById('auth-email').value.trim()
+    if (!email) {
+      showMessage('Please enter your email address.', true)
+      return
+    }
+
+    setLoading(true)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email)
+      if (error) throw error
+      showMessage('Password reset link sent! Check your email.', false)
+      setLoading(false)
+    } catch (err) {
+      showMessage(friendlyError(err.message), true)
+      setLoading(false)
+    }
+  }
+
+  function friendlyError(msg) {
+    if (!msg) return 'Something went wrong. Please try again.'
+    if (msg.includes('Invalid login')) return 'Incorrect email or password.'
+    if (msg.includes('Email not confirmed')) return 'Please check your email and confirm your account first.'
+    if (msg.includes('already registered')) return 'This email is already registered. Try logging in instead.'
+    if (msg.includes('rate limit') || msg.includes('too many')) return 'Too many attempts. Please wait a moment and try again.'
+    if (msg.includes('not configured')) return 'Login service is unavailable. Try guest mode.'
+    return msg
   }
 
   function handleGuest() {
@@ -257,6 +315,27 @@ const scopedCSS = `
     flex: 1;
     height: 1px;
     background: var(--card-border);
+  }
+
+  /* Link buttons */
+  .btn-link {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px 0;
+    transition: opacity 0.2s;
+  }
+  .btn-link:hover { opacity: 0.8; }
+  .auth-forgot {
+    align-self: flex-end;
+    margin-top: -8px;
+  }
+  .auth-back {
+    align-self: center;
+    margin-top: 4px;
   }
 
   /* Guest */

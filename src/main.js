@@ -43,6 +43,7 @@ route('/test-b', guarded(testBView))
 route('/test-c', guarded(testCView))
 route('/test-d', guarded(testDView))
 
+route('/test', guarded((container) => testCView(container, { debug: true })))
 route('/test-xyz', guarded(testXYZView))
 route('/report', guarded(diagnosticReportView))
 route('/practice-recognition', guarded(practiceRecView))

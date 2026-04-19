@@ -61,7 +61,7 @@ const CHAR_POOL = [
   { char: '月', base: 'yue', tone: 4, meaning: 'moon' },
 ]
 
-export function testCView(container) {
+export function testCView(container, { debug = false } = {}) {
   const engine = new AudioEngine()
   let questions = []
   let currentQ = 0
@@ -144,7 +144,7 @@ export function testCView(container) {
         <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:8px">
           ⚠️ Allow microphone access when prompted
         </p>
-        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.75rem;margin-bottom:16px">
+        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.75rem;margin-bottom:16px;${debug ? '' : 'display:none'}">
           Loading AI models…
         </p>
         <button class="btn btn-primary btn-lg" id="tc-start">Start Test C</button>
@@ -152,7 +152,7 @@ export function testCView(container) {
 
       <!-- Quiz -->
       <div id="tc-quiz" class="hidden">
-        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.72rem;text-align:center;margin-bottom:8px"></p>
+        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.72rem;text-align:center;margin-bottom:8px;${debug ? '' : 'display:none'}"></p>
         <div class="progress-wrap">
           <div class="progress-info">
             <span id="tc-prog-label">Question 1 of ${TOTAL}</span>
@@ -218,7 +218,11 @@ export function testCView(container) {
               <button class="btn btn-sm tc-confirm-btn" id="tc-confirm-yes" style="background:var(--correct);color:#fff">Yes</button>
               <button class="btn btn-sm tc-confirm-btn" id="tc-confirm-no" style="background:var(--incorrect);color:#fff">No</button>
             </div>
-            <button class="btn btn-primary" id="tc-next">Next →</button>
+            <div class="tc-result-actions" id="tc-result-actions">
+              <button class="btn btn-secondary hidden" id="tc-retry-q">🎤 Try Again</button>
+              <button class="btn btn-secondary hidden" id="tc-listen-result">🔊 Listen</button>
+              <button class="btn btn-primary" id="tc-next">Next →</button>
+            </div>
           </div>
         </div>
       </div>
@@ -237,6 +241,8 @@ export function testCView(container) {
   $('tc-start').addEventListener('click', startTest)
   $('tc-listen').addEventListener('click', listenExample)
   $('tc-next').addEventListener('click', nextQuestion)
+  $('tc-listen-result').addEventListener('click', listenExample)
+  $('tc-retry-q').addEventListener('click', retryQuestion)
 
   // Accuracy logger — user confirms if ensemble was right or wrong
   let pendingLogEntry = null
@@ -332,6 +338,8 @@ export function testCView(container) {
     $('tc-q-result').classList.add('hidden')
     $('tc-judges-wrap').classList.add('hidden')
     $('tc-confirm-wrap').classList.add('hidden')
+    $('tc-retry-q').classList.add('hidden')
+    $('tc-listen-result').classList.add('hidden')
     const coachEl = document.getElementById('tc-coach-msg')
     if (coachEl) coachEl.style.display = 'none'
     pendingLogEntry = null
@@ -426,12 +434,14 @@ export function testCView(container) {
       4: [5, 4, 3, 2, 1],
     }
 
-    drawContour(ensemble.userContour, TARGET_CONTOURS[q.tone])
-    $('tc-contour-wrap').classList.remove('hidden')
+    if (debug) {
+      drawContour(ensemble.userContour, TARGET_CONTOURS[q.tone])
+      $('tc-contour-wrap').classList.remove('hidden')
 
-    // Debug: render mel-spectrogram so we can visually verify the JS pipeline
-    drawMelSpectrogram(getMelSpectrogramImage(recording.samples, recording.sampleRate))
-    $('tc-mel-wrap').classList.remove('hidden')
+      // Debug: render mel-spectrogram so we can visually verify the JS pipeline
+      drawMelSpectrogram(getMelSpectrogramImage(recording.samples, recording.sampleRate))
+      $('tc-mel-wrap').classList.remove('hidden')
+    }
 
     // Pass if detected tone matches target
     const detectedTone = ensemble.tone
@@ -495,22 +505,24 @@ export function testCView(container) {
       coachEl.style.display = 'none'
     }
 
-    // Show model breakdown below message
-    let breakdownEl = document.getElementById('tc-model-breakdown')
-    if (!breakdownEl) {
-      breakdownEl = document.createElement('div')
-      breakdownEl.id = 'tc-model-breakdown'
-      breakdownEl.style.cssText = 'font-size:0.72rem;color:var(--text-muted);margin-top:4px;letter-spacing:0.03em'
-      $('tc-q-result').insertBefore(breakdownEl, $('tc-next'))
+    // Show model breakdown below message (debug only)
+    if (debug) {
+      let breakdownEl = document.getElementById('tc-model-breakdown')
+      if (!breakdownEl) {
+        breakdownEl = document.createElement('div')
+        breakdownEl.id = 'tc-model-breakdown'
+        breakdownEl.style.cssText = 'font-size:0.72rem;color:var(--text-muted);margin-top:4px;letter-spacing:0.03em'
+        $('tc-q-result').insertBefore(breakdownEl, $('tc-next'))
+      }
+      breakdownEl.textContent = modelBreakdown || 'pitch only'
     }
-    breakdownEl.textContent = modelBreakdown || 'pitch only'
 
-    renderJudges(ensemble.results, q.tone)
+    if (debug) renderJudges(ensemble.results, q.tone)
     $('tc-q-result').classList.remove('hidden')
     $('tc-prog-score').textContent = `Score: ${score}`
     showToast(passed, ensemble.confidence)
 
-    // Prepare accuracy log entry and show confirm buttons
+    // Prepare accuracy log entry and show confirm buttons (debug only)
     const modelVotes = {}
     for (const name of ['azure', 'pitch', 'groq', 'groqTurbo', 'google', 'deepgram', 'whisper', 'classifier']) {
       const r = ensemble.results.find(r => r.model === name)
@@ -528,11 +540,42 @@ export function testCView(container) {
       autoCorrect: passed,
       timestamp: new Date().toISOString(),
     }
-    $('tc-confirm-wrap').classList.remove('hidden')
+    if (debug) $('tc-confirm-wrap').classList.remove('hidden')
+
+    // Show appropriate action buttons
+    if (passed) {
+      $('tc-listen-result').classList.remove('hidden')
+      $('tc-retry-q').classList.add('hidden')
+    } else {
+      $('tc-retry-q').classList.remove('hidden')
+      $('tc-listen-result').classList.add('hidden')
+    }
 
     $('tc-rec-label').textContent = 'Done'
     $('tc-rec-icon').textContent = passed ? '✓' : '✗'
     $('tc-rec-status').textContent = passed ? 'Correct!' : 'Not quite'
+  }
+
+  function retryQuestion() {
+    // Reset UI for retry without advancing question
+    $('tc-q-result').classList.add('hidden')
+    $('tc-contour-wrap').classList.add('hidden')
+    $('tc-mel-wrap').classList.add('hidden')
+    $('tc-judges-wrap').classList.add('hidden')
+    $('tc-confirm-wrap').classList.add('hidden')
+    const coachEl = document.getElementById('tc-coach-msg')
+    if (coachEl) coachEl.style.display = 'none'
+    $('tc-rec-label').textContent = 'Tap to Record'
+    $('tc-rec-icon').textContent = '🎤'
+    $('tc-rec-status').textContent = 'Try again!'
+    $('tc-record').disabled = false
+    $('tc-listen').disabled = false
+    pendingLogEntry = null
+    // Revert score if the wrong answer was already counted
+    const lastAnswer = answers[answers.length - 1]
+    if (lastAnswer && !lastAnswer.passed) {
+      answers.pop()
+    }
   }
 
   function nextQuestion() {
@@ -912,6 +955,9 @@ const scopedCSS = `
   .tc-q-msg {
     font-size: 0.9rem; color: var(--text-secondary);
     margin: 8px 0 16px;
+  }
+  .tc-result-actions {
+    display: flex; gap: 10px; justify-content: center; margin-top: 4px;
   }
   .tc-confirm-wrap {
     display: flex; align-items: center; justify-content: center; gap: 10px;

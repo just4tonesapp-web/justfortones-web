@@ -2,7 +2,7 @@
 // Test A – Tone Listening Quiz (12 items)
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
-import { SYLLABLE_POOL, applyTone, shuffle } from '../utils/pinyin.js'
+import { SYLLABLE_POOL, applyTone, shuffle, hasCharacter } from '../utils/pinyin.js'
 import { playSyllable } from '../utils/audio.js'
 import { hasRecording } from '../utils/recordingsManifest.js'
 import { saveResult } from '../services/progressService.js'
@@ -27,7 +27,7 @@ export function testAView(container) {
     const tones = shuffle([1,1,1, 2,2,2, 3,3,3, 4,4,4])
     const used = new Set()
     questions = tones.map((t) => {
-      const candidates = SYLLABLE_POOL.filter(s => !used.has(s) && hasRecording(s, t))
+      const candidates = SYLLABLE_POOL.filter(s => !used.has(s) && hasRecording(s, t) && hasCharacter(s, t))
       const pool = candidates.length ? candidates : SYLLABLE_POOL.filter(s => !used.has(s))
       const syllable = pool[Math.floor(Math.random() * pool.length)]
       used.add(syllable)
@@ -279,7 +279,7 @@ export function testAView(container) {
         <div class="report-actions">
           <button class="btn btn-secondary" id="ta-retry">🔄 Retake</button>
           <button class="btn btn-primary" id="ta-continue">
-            ${passed ? '→ Continue to Test B' : '→ Practice Tones'}
+            ${passed ? '→ Continue to Test C' : '→ Practice Tones'}
           </button>
         </div>
       </div>
@@ -288,7 +288,7 @@ export function testAView(container) {
     document.getElementById('ta-retry').addEventListener('click', startTest)
     document.getElementById('ta-continue').addEventListener('click', () => {
       if (passed) {
-        navigate('/test-b')
+        navigate('/test-c')
       } else {
         navigate('/practice-recognition')
       }
