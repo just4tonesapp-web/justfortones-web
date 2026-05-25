@@ -16,7 +16,7 @@ import { pickPraise, buildWrongFeedback } from '../utils/testCFeedback.js'
 // import { isWebSpeechAvailable, startWebSpeech, stopWebSpeech } from '../utils/models/webSpeechModel.js'
 
 const TOTAL = 12
-const PASS_SCORE = 10
+const PASS_SCORE = 7
 
 const JUDGE_PERSONAS = {
   azure:      { emoji: '🎯', name: 'Azure' },
@@ -31,7 +31,7 @@ const JUDGE_PERSONAS = {
   deepgram:   { emoji: '🔊', name: 'Deep' },
 }
 
-const TONE_ARROWS = { 1: '‾', 2: '↗', 3: '↘↗', 4: '↘' }
+const TONE_ARROWS = { 1: '─', 2: '／', 3: '∨', 4: '＼' }
 
 // Characters with known tones for Test C (single characters with pinyin)
 const CHAR_POOL = [
@@ -104,21 +104,29 @@ export function testCView(container, { debug = false } = {}) {
   // Show initial state immediately
   updateModelStatus()
 
+  // Items used in the previous attempt — excluded on retake.
+  let previousChars = new Set()
+
   function generate() {
-    // Pick 3 per tone, total 12
+    // Pick 3 per tone, total 12 — preferring chars not used in the previous attempt.
     const byTone = { 1: [], 2: [], 3: [], 4: [] }
     CHAR_POOL.forEach(c => byTone[c.tone].push(c))
     const picked = []
     for (let t = 1; t <= 4; t++) {
-      const s = shuffle(byTone[t]).slice(0, 3)
-      picked.push(...s)
+      const fresh = byTone[t].filter(c => !previousChars.has(c.char))
+      const pool = fresh.length >= 3 ? fresh : byTone[t]
+      picked.push(...shuffle(pool).slice(0, 3))
     }
     questions = shuffle(picked)
+    previousChars = new Set(questions.map(q => q.char))
   }
 
   // ── Mount ──
   container.innerHTML = `
     <div class="app-shell">
+      <div class="back-row">
+        <button class="back-home-btn" id="tc-home">← Home</button>
+      </div>
       <div class="tc-header">
         <span class="badge">Diagnostic Step 2</span>
         <h1>Test C — Pronunciation</h1>
@@ -219,7 +227,7 @@ export function testCView(container, { debug = false } = {}) {
               <button class="btn btn-sm tc-confirm-btn" id="tc-confirm-no" style="background:var(--incorrect);color:#fff">No</button>
             </div>
             <div class="tc-result-actions" id="tc-result-actions">
-              <button class="btn btn-secondary hidden" id="tc-retry-q">🎤 Try Again</button>
+              <button class="btn btn-secondary hidden" id="tc-retry-q">🎤 Practice Again</button>
               <button class="btn btn-secondary hidden" id="tc-listen-result">🔊 Listen</button>
               <button class="btn btn-primary" id="tc-next">Next →</button>
             </div>
@@ -238,6 +246,7 @@ export function testCView(container, { debug = false } = {}) {
   container.appendChild(style)
 
   const $ = (id) => document.getElementById(id)
+  $('tc-home').addEventListener('click', () => navigate('/'))
   $('tc-start').addEventListener('click', startTest)
   $('tc-listen').addEventListener('click', listenExample)
   $('tc-next').addEventListener('click', nextQuestion)
@@ -434,11 +443,12 @@ export function testCView(container, { debug = false } = {}) {
       4: [5, 4, 3, 2, 1],
     }
 
-    if (debug) {
-      drawContour(ensemble.userContour, TARGET_CONTOURS[q.tone])
-      $('tc-contour-wrap').classList.remove('hidden')
+    // Pitch contour: always visible (pedagogical — shows user vs target curve).
+    // Mel-spectrogram stays debug-only.
+    drawContour(ensemble.userContour, TARGET_CONTOURS[q.tone])
+    $('tc-contour-wrap').classList.remove('hidden')
 
-      // Debug: render mel-spectrogram so we can visually verify the JS pipeline
+    if (debug) {
       drawMelSpectrogram(getMelSpectrogramImage(recording.samples, recording.sampleRate))
       $('tc-mel-wrap').classList.remove('hidden')
     }
@@ -460,24 +470,23 @@ export function testCView(container, { debug = false } = {}) {
       passed,
     })
 
-    // Score display — show confidence instead of arbitrary %
-    const confText = ensemble.tone ? `${ensemble.confidence}% confident` : '—'
     $('tc-q-score').textContent = passed ? '✓' : '✗'
     $('tc-q-score').style.color = passed ? 'var(--correct)' : 'var(--incorrect)'
 
-    const toneNames = { 1: '1st (High ‾)', 2: '2nd (Rising ↗)', 3: '3rd (Dip ↘↗)', 4: '4th (Falling ↘)' }
     let msg = ''
     let coachMsg = ''
     if (!detectedTone) {
       msg = 'Could not detect a clear tone — try speaking louder'
     } else if (passed) {
-      msg = `${pickPraise(ensemble.confidence)} · Detected: ${toneNames[detectedTone]} · ${confText}`
+      // No "Detected: X · Y% confident" — just praise (model output stays hidden).
+      msg = pickPraise(ensemble.confidence)
     } else {
-      // Pitch model agreement = "almost" feedback; otherwise full tone reminder
+      // Don't reveal which tone the answer is — show generic "almost" + the
+      // pronunciation variation (action description without naming the tone).
       const pitchVote = ensemble.results.find(r => r.model === 'pitch')
       const pitchAgreed = pitchVote && pitchVote.tone === q.tone
       const fb = buildWrongFeedback(q.tone, pitchAgreed)
-      msg = `${fb.intro} (Detected ${toneNames[detectedTone]}, expected ${toneNames[q.tone]} · ${confText})`
+      msg = 'Almost — give it another try.'
       coachMsg = fb.variation
     }
 
@@ -495,7 +504,7 @@ export function testCView(container, { debug = false } = {}) {
     if (!coachEl) {
       coachEl = document.createElement('div')
       coachEl.id = 'tc-coach-msg'
-      coachEl.style.cssText = 'font-size:0.85rem;color:var(--text-secondary);margin-top:8px;line-height:1.5;text-align:left;padding:10px 12px;background:var(--surface);border-radius:var(--radius-sm)'
+      coachEl.style.cssText = 'font-size:1rem;color:var(--text-primary);margin-top:10px;line-height:1.55;text-align:left;padding:14px 16px;background:var(--surface);border-radius:var(--radius-sm)'
       $('tc-q-result').insertBefore(coachEl, $('tc-q-msg').nextSibling)
     }
     if (coachMsg) {
@@ -711,7 +720,7 @@ export function testCView(container, { debug = false } = {}) {
 
     // Tone breakdown
     const toneColors = { 1: 'var(--tone1)', 2: 'var(--tone2)', 3: 'var(--tone3)', 4: 'var(--tone4)' }
-    const toneNames = { 1: '1st (High)', 2: '2nd (Rising)', 3: '3rd (Dip)', 4: '4th (Fall)' }
+    const toneNames = { 1: '1st (High ─)', 2: '2nd (Rising ／)', 3: '3rd (Dip ∨)', 4: '4th (Fall ＼)' }
     let toneRows = ''
     for (let t = 1; t <= 4; t++) {
       const qs = answers.filter(a => a.tone === t)
@@ -743,8 +752,8 @@ export function testCView(container, { debug = false } = {}) {
     })
 
     const verdict = passed
-      ? `🎉 Excellent! You scored <strong>${score}/${TOTAL}</strong>. You can pronounce the four tones well! Let's see if you know the tones of the most frequently used characters.`
-      : `You scored <strong>${score}/${TOTAL}</strong>. Although you can hear the difference of the four tones, you might need to work on how to pronounce them accurately!`
+      ? `🎉 Great Job! Incredible! You nailed it! You scored <strong>${score}/${TOTAL}</strong>. Now let's see if you can pronounce tones of disyllabic Chinese words!`
+      : `You scored <strong>${score}/${TOTAL}</strong>. Fluctuation in performance when producing foreign sounds is totally expected. Want to retake the test, or go straight to practice?`
 
     el.innerHTML = `
       <div class="app-shell animate-in">
@@ -768,10 +777,13 @@ export function testCView(container, { debug = false } = {}) {
         </div>
 
         <div class="report-actions">
-          <button class="btn btn-secondary" id="tc-retry">🔄 Retake</button>
-          <button class="btn btn-primary" id="tc-continue">
-            ${passed ? '→ Continue to Step 3' : '→ Practice Pronunciation'}
-          </button>
+          ${passed ? `
+            <button class="btn btn-secondary" id="tc-retry">🔄 Retake</button>
+            <button class="btn btn-primary" id="tc-continue">→ Continue to Test D</button>
+          ` : `
+            <button class="btn btn-primary" id="tc-retry">🔄 Retake the Test</button>
+            <button class="btn btn-primary" id="tc-continue">🎤 Single Syllable Tone Practice</button>
+          `}
         </div>
       </div>
     `
@@ -781,6 +793,8 @@ export function testCView(container, { debug = false } = {}) {
       if (passed) {
         navigate('/test-d')
       } else {
+        sessionStorage.setItem('j4t_practice_set', '1')
+        sessionStorage.setItem('j4t_practice_return', '/test-c')
         navigate('/practice-production')
       }
     })
@@ -950,11 +964,13 @@ const scopedCSS = `
     margin-top: 16px;
   }
   .tc-q-score {
-    font-size: 2rem; font-weight: 700; line-height: 1;
+    font-size: 2.4rem; font-weight: 700; line-height: 1;
   }
   .tc-q-msg {
-    font-size: 0.9rem; color: var(--text-secondary);
-    margin: 8px 0 16px;
+    font-size: 1.05rem; color: var(--text-primary);
+    font-weight: 600;
+    margin: 10px 0 16px;
+    line-height: 1.45;
   }
   .tc-result-actions {
     display: flex; gap: 10px; justify-content: center; margin-top: 4px;

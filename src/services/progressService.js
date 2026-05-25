@@ -14,7 +14,7 @@ export async function saveResult(testType, score, total, details = {}) {
     test_type: testType,  // 'A', 'B', 'C', 'D', 'X', 'Y', 'Z'
     score,
     total,
-    passed: score >= (total === 12 ? 10 : Math.ceil(total * 0.83)),
+    passed: score >= (total === 12 ? 7 : Math.ceil(total * 0.58)),
     details,              // per-tone breakdown, etc.
     created_at: new Date().toISOString(),
   }
@@ -82,20 +82,20 @@ export async function getDiagnosticState() {
   const passedD = !!best('D')
   const passedX = !!best('X')
   const passedY = !!best('Y')
-  const passedZ = !!best('Z')
 
   // Step 1: Must pass both A and B
   const step1Done = passedA && passedB
   // Step 2: Must pass both C and D
   const step2Done = passedC && passedD
-  // Step 3: Must pass all X, Y, Z
-  const step3Done = passedX && passedY && passedZ
+  // Step 3: Must pass X (Y is in-progress and not yet enforced)
+  const step3Done = passedX
 
   return {
     results,
-    passedA, passedB, passedC, passedD, passedX, passedY, passedZ,
+    passedA, passedB, passedC, passedD, passedX, passedY,
+    // legacy fields kept for any older callers
+    passedZ: false,
     step1Done, step2Done, step3Done,
-    // Which step should the user be on?
     currentStep: !step1Done ? 1 : !step2Done ? 2 : 3,
   }
 }

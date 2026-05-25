@@ -5,15 +5,24 @@
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
 import { applyTone, shuffle } from '../utils/pinyin.js'
-import { speakChinese } from '../utils/audio.js'
+import { playDisyllable, stopAllAudio } from '../utils/audio.js'
 import { AudioEngine } from '../utils/audioEngine.js'
 import { toneDetector } from '../utils/toneDetector.js'
+import { splitDisyllableAudio } from '../utils/audioSplit.js'
+import { pickPraise } from '../utils/testCFeedback.js'
+
+const TONE_COACH = {
+  1: 'Keep the voice high and flat — like singing one steady note.',
+  2: 'Start mid and rise up — like asking "really?"',
+  3: 'Dip low then rise — like a surprised "huh?"',
+  4: 'Start high and fall sharply — like a stern "no!"',
+}
 import { supabase } from '../supabaseClient.js'
 import { saveResult } from '../services/progressService.js'
 import { getMelSpectrogramImage } from '../utils/models/tonetModel.js'
 
 const TOTAL = 12
-const PASS_SCORE = 10
+const PASS_SCORE = 7
 
 const JUDGE_PERSONAS = {
   azure:      { emoji: '🎯', name: 'Azure' },
@@ -28,7 +37,7 @@ const JUDGE_PERSONAS = {
   deepgram:   { emoji: '🔊', name: 'Deep' },
 }
 
-const TONE_ARROWS = { 1: '‾', 2: '↗', 3: '↘↗', 4: '↘' }
+const TONE_ARROWS = { 1: '─', 2: '／', 3: '∨', 4: '＼' }
 
 // Two-character combinations pool
 const COMBO_POOL = [
@@ -37,7 +46,6 @@ const COMBO_POOL = [
   { chars: '中国', bases: ['zhong','guo'], tones: [1,2], meaning: 'China' },
   { chars: '学生', bases: ['xue','sheng'], tones: [2,1], meaning: 'student' },
   { chars: '老师', bases: ['lao','shi'], tones: [3,1], meaning: 'teacher' },
-  { chars: '你好', bases: ['ni','hao'], tones: [3,3], meaning: 'hello' },
   { chars: '谢谢', bases: ['xie','xie'], tones: [4,4], meaning: 'thank you' },
   { chars: '再见', bases: ['zai','jian'], tones: [4,4], meaning: 'goodbye' },
   { chars: '明天', bases: ['ming','tian'], tones: [2,1], meaning: 'tomorrow' },
@@ -54,7 +62,6 @@ const COMBO_POOL = [
   { chars: '开心', bases: ['kai','xin'], tones: [1,1], meaning: 'happy' },
   { chars: '高兴', bases: ['gao','xing'], tones: [1,4], meaning: 'glad' },
   { chars: '漂亮', bases: ['piao','liang'], tones: [4,4], meaning: 'beautiful' },
-  { chars: '可以', bases: ['ke','yi'], tones: [3,3], meaning: 'can/may' },
   { chars: '知道', bases: ['zhi','dao'], tones: [1,4], meaning: 'know' },
 ]
 
@@ -101,14 +108,23 @@ export function testDView(container) {
   // Show initial state immediately
   updateModelStatus()
 
+  // Items used in the previous attempt — excluded on retake.
+  let previousCombos = new Set()
+
   function generate() {
-    // Pick 12 random combos from the pool
-    questions = shuffle([...COMBO_POOL]).slice(0, TOTAL)
+    // Pick 12 random combos, preferring ones not used in the previous attempt.
+    const fresh = COMBO_POOL.filter(c => !previousCombos.has(c.chars))
+    const pool = fresh.length >= TOTAL ? fresh : COMBO_POOL
+    questions = shuffle([...pool]).slice(0, TOTAL)
+    previousCombos = new Set(questions.map(q => q.chars))
   }
 
   // ── Mount ──
   container.innerHTML = `
     <div class="app-shell">
+      <div class="back-row">
+        <button class="back-home-btn" id="td-home">← Home</button>
+      </div>
       <div class="td-header">
         <span class="badge">Diagnostic Step 2</span>
         <h1>Test D — Two-Character Pronunciation</h1>
@@ -122,27 +138,25 @@ export function testDView(container) {
         <p style="color:var(--text-secondary);margin:12px 0;line-height:1.6">
           You'll see 12 two-character words with their pinyin.<br>
           Listen to the example, then record yourself saying the word.<br>
-          We'll analyze the tone of the <strong>first character</strong>.
+          We'll analyze the tone of <strong>both characters</strong>.
         </p>
         <div class="intro-rules">
           <strong>How it works:</strong><br>
           — Tap 🔊 to hear the correct pronunciation<br>
-          — Tap 🎤 to record yourself (3 seconds max)<br>
-          — The first character's tone is analyzed<br>
+          — Tap 🎤 to record yourself (up to 6 seconds)<br>
+          — Both characters' tones are analyzed<br>
           — Score ${PASS_SCORE}+ out of 12 to pass
         </div>
         <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:8px">
           Allow microphone access when prompted
         </p>
-        <p id="td-model-status" style="color:var(--text-muted);font-size:0.75rem;margin-bottom:16px">
-          Loading AI models...
-        </p>
+        <p id="td-model-status" style="display:none"></p>
         <button class="btn btn-primary btn-lg" id="td-start">Start Test D</button>
       </div>
 
       <!-- Quiz -->
       <div id="td-quiz" class="hidden">
-        <p id="td-model-status" style="color:var(--text-muted);font-size:0.72rem;text-align:center;margin-bottom:8px"></p>
+        <p id="td-model-status" style="display:none"></p>
         <div class="progress-wrap">
           <div class="progress-info">
             <span id="td-prog-label">Question 1 of ${TOTAL}</span>
@@ -200,15 +214,20 @@ export function testDView(container) {
 
           <!-- Result for this question -->
           <div class="td-q-result hidden" id="td-q-result">
-            <div class="td-q-score" id="td-q-score">85%</div>
-            <div class="td-q-msg" id="td-q-msg">Great match!</div>
+            <div class="td-q-score" id="td-q-score">✓</div>
+            <div class="td-q-msg" id="td-q-msg"></div>
+            <div class="td-syl-line" id="td-syl-line"></div>
             <div id="td-judges-wrap" class="hidden"></div>
             <div id="td-confirm-wrap" class="td-confirm-wrap hidden">
               <span style="font-size:0.8rem;color:var(--text-secondary)">Did you say the right tone?</span>
               <button class="btn btn-sm td-confirm-btn" id="td-confirm-yes" style="background:var(--correct);color:#fff">Yes</button>
               <button class="btn btn-sm td-confirm-btn" id="td-confirm-no" style="background:var(--incorrect);color:#fff">No</button>
             </div>
-            <button class="btn btn-primary" id="td-next">Next →</button>
+            <div class="td-result-actions" id="td-result-actions">
+              <button class="btn btn-secondary hidden" id="td-retry-q">🎤 Practice Again</button>
+              <button class="btn btn-secondary hidden" id="td-listen-result">🔊 Listen</button>
+              <button class="btn btn-primary" id="td-next">Next →</button>
+            </div>
           </div>
         </div>
       </div>
@@ -224,9 +243,12 @@ export function testDView(container) {
   container.appendChild(style)
 
   const $ = (id) => document.getElementById(id)
+  $('td-home').addEventListener('click', () => navigate('/'))
   $('td-start').addEventListener('click', startTest)
   $('td-listen').addEventListener('click', listenExample)
   $('td-next').addEventListener('click', nextQuestion)
+  $('td-listen-result').addEventListener('click', listenExample)
+  $('td-retry-q').addEventListener('click', retryQuestion)
 
   // Accuracy logger — user confirms if ensemble was right or wrong
   let pendingLogEntry = null
@@ -312,6 +334,7 @@ export function testDView(container) {
     $('td-pinyin').textContent = `${applyTone(q.bases[0], q.tones[0])} ${applyTone(q.bases[1], q.tones[1])}`
     $('td-meaning').textContent = q.meaning
 
+
     // Reset UI
     $('td-rec-label').textContent = 'Tap to Record'
     $('td-rec-icon').textContent = '🎤'
@@ -324,6 +347,10 @@ export function testDView(container) {
     $('td-q-result').classList.add('hidden')
     $('td-judges-wrap').classList.add('hidden')
     $('td-confirm-wrap').classList.add('hidden')
+    $('td-retry-q').classList.add('hidden')
+    $('td-listen-result').classList.add('hidden')
+    const coachEl = document.getElementById('td-coach-msg')
+    if (coachEl) coachEl.style.display = 'none'
     pendingLogEntry = null
     $('td-listen').disabled = false
 
@@ -339,8 +366,8 @@ export function testDView(container) {
     const btn = $('td-listen')
     btn.textContent = '🔊 Playing...'
     btn.disabled = true
-    // Speak the full two-character word
-    speakChinese(q.chars, q.tones[0], () => {
+    // Prefer the real disyllabic recording; falls back to TTS if missing.
+    playDisyllable(q.bases[0], q.tones[0], q.bases[1], q.tones[1], () => {
       btn.textContent = '🔊 Listen again'
       btn.disabled = false
     })
@@ -375,8 +402,9 @@ export function testDView(container) {
         if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null }
         $('td-rec-status').textContent = 'Speaking...'
       } else if (hasSpeaking && !silenceTimer) {
-        // Speech detected, now silence — stop after 400ms
-        silenceTimer = setTimeout(() => { if (isRecording) stopRecording() }, 400)
+        // Speech detected, now silence — stop after 700ms (disyllabic words
+        // have an inter-syllable gap so we wait longer than for single chars).
+        silenceTimer = setTimeout(() => { if (isRecording) stopRecording() }, 700)
         $('td-rec-status').textContent = 'Done? Stopping...'
       }
     }, 50)
@@ -402,32 +430,48 @@ export function testDView(container) {
 
     const q = questions[currentQ]
 
-    // ── Run ensemble detection on first character's base ──
-    const ensemble = await toneDetector.detect(
-      { samples: recording.samples, sampleRate: recording.sampleRate },
-      q.bases[0],
-      { referenceChar: q.chars[0] }
-    )
+    // ── Split the recording at the inter-syllable silence and run the
+    // ensemble on each half independently. Both syllables must match for
+    // the question to be marked correct.
+    const { first, second } = splitDisyllableAudio(recording.samples, recording.sampleRate)
+    const [ens1, ens2] = await Promise.all([
+      toneDetector.detect(
+        { samples: first, sampleRate: recording.sampleRate },
+        q.bases[0],
+        { referenceChar: q.chars[0] }
+      ),
+      toneDetector.detect(
+        { samples: second, sampleRate: recording.sampleRate },
+        q.bases[1],
+        { referenceChar: q.chars[1] }
+      ),
+    ])
 
-    // Target contour for canvas (first character's tone)
+    // Mel-spectrogram is model-internal — stays hidden. The pitch-contour
+    // canvas is shown because it's pedagogically useful (visualises the user's
+    // voice against the target tone curve).
+    $('td-mel-wrap').classList.add('hidden')
+
+    const detected1 = ens1.tone
+    const detected2 = ens2.tone
+    const target1 = q.tones[0]
+    const target2 = q.tones[1]
+
+    // Target contours per Chao's 5-level system, used for the pitch canvas.
     const TARGET_CONTOURS = {
-      1: [5, 5, 5, 5, 5],
-      2: [3, 3.5, 4, 4.5, 5],
-      3: [2, 1.5, 1, 1.5, 4],
-      4: [5, 4, 3, 2, 1],
+      1: [5, 5, 5, 5, 5],           // flat high
+      2: [3, 3.5, 4, 4.5, 5],       // rising
+      3: [2, 1.5, 1, 1.5, 4],       // dipping
+      4: [5, 4, 3, 2, 1],           // falling
     }
-
-    drawContour(ensemble.userContour, TARGET_CONTOURS[q.tones[0]])
+    drawDisyllableContour(
+      ens1.userContour, TARGET_CONTOURS[target1],
+      ens2.userContour, TARGET_CONTOURS[target2]
+    )
     $('td-contour-wrap').classList.remove('hidden')
-
-    // Debug: render mel-spectrogram
-    drawMelSpectrogram(getMelSpectrogramImage(recording.samples, recording.sampleRate))
-    $('td-mel-wrap').classList.remove('hidden')
-
-    // Pass if detected tone matches first character's target tone
-    const detectedTone = ensemble.tone
-    const targetTone = q.tones[0]
-    const passed = detectedTone === targetTone
+    const ok1 = detected1 === target1
+    const ok2 = detected2 === target2
+    const passed = ok1 && ok2
     if (passed) score++
 
     answers.push({
@@ -435,76 +479,118 @@ export function testDView(container) {
       bases: q.bases,
       tones: q.tones,
       meaning: q.meaning,
-      targetTone,
-      detectedTone,
-      confidence: ensemble.confidence,
-      agreement: ensemble.agreement,
-      modelResults: ensemble.results,
+      targetTone: target1,
+      detectedTone: detected1,
+      detectedTone2: detected2,
+      confidence: ens1.confidence,
+      confidence2: ens2.confidence,
+      agreement: ens1.agreement,
+      agreement2: ens2.agreement,
+      modelResults: ens1.results,
+      modelResults2: ens2.results,
       passed,
     })
 
     // Score display
-    const confText = ensemble.tone ? `${ensemble.confidence}% confident` : '—'
     $('td-q-score').textContent = passed ? '✓' : '✗'
     $('td-q-score').style.color = passed ? 'var(--correct)' : 'var(--incorrect)'
 
-    const toneNames = { 1: '1st (High ‾)', 2: '2nd (Rising ↗)', 3: '3rd (Dip ↘↗)', 4: '4th (Falling ↘)' }
-    let msg = ''
-    if (!detectedTone) {
-      msg = 'Could not detect a clear tone — try speaking louder'
-    } else if (passed) {
-      msg = `First char: ${toneNames[detectedTone]} · ${confText}`
+    // Short praise / "almost" intro (mirrors Test C). Don't reveal target tones.
+    $('td-q-msg').textContent = passed
+      ? pickPraise(ens1.confidence)
+      : 'Almost — give it another try.'
+
+    // Per-syllable verdict only, no tone numbers.
+    $('td-syl-line').innerHTML = `
+      <span class="${ok1 ? 'ok' : 'bad'}">1st syllable: ${ok1 ? 'correct ✓' : 'incorrect ✗'}</span>
+      <span class="${ok2 ? 'ok' : 'bad'}">2nd syllable: ${ok2 ? 'correct ✓' : 'incorrect ✗'}</span>
+    `
+
+    // Coach line (tone-specific guidance) shown only on wrong answers
+    let coachEl = document.getElementById('td-coach-msg')
+    if (!coachEl) {
+      coachEl = document.createElement('div')
+      coachEl.id = 'td-coach-msg'
+      coachEl.style.cssText = 'font-size:1rem;color:var(--text-primary);margin-top:10px;line-height:1.55;text-align:left;padding:14px 16px;background:var(--surface);border-radius:var(--radius-sm)'
+      $('td-q-result').insertBefore(coachEl, $('td-result-actions'))
+    }
+    if (!passed) {
+      const lines = []
+      // Describe how to pronounce each wrong syllable WITHOUT naming the
+      // target tone number.
+      if (!ok1) lines.push(`1st syllable: ${TONE_COACH[target1]}`)
+      if (!ok2) lines.push(`2nd syllable: ${TONE_COACH[target2]}`)
+      coachEl.innerHTML = lines.join('<br>')
+      coachEl.style.display = ''
     } else {
-      msg = `Detected ${toneNames[detectedTone]}, expected ${toneNames[targetTone]} · ${confText}`
+      coachEl.style.display = 'none'
     }
 
-    // Show per-model breakdown
-    const modelBreakdown = ensemble.results.map(r => {
-      const icon = r.tone === targetTone ? '✓' : '✗'
-      return `${r.model}:T${r.tone}${icon}`
-    }).join('  ')
-
-    $('td-q-msg').textContent = msg
-    $('td-q-msg').title = modelBreakdown
-
-    // Show model breakdown below message
-    let breakdownEl = document.getElementById('td-model-breakdown')
-    if (!breakdownEl) {
-      breakdownEl = document.createElement('div')
-      breakdownEl.id = 'td-model-breakdown'
-      breakdownEl.style.cssText = 'font-size:0.72rem;color:var(--text-muted);margin-top:4px;letter-spacing:0.03em'
-      $('td-q-result').insertBefore(breakdownEl, $('td-next'))
+    // Action buttons: Practice Again on wrong, Listen on right (mirrors Test C)
+    if (passed) {
+      $('td-listen-result').classList.remove('hidden')
+      $('td-retry-q').classList.add('hidden')
+    } else {
+      $('td-retry-q').classList.remove('hidden')
+      $('td-listen-result').classList.add('hidden')
     }
-    breakdownEl.textContent = modelBreakdown || 'pitch only'
 
-    renderJudges(ensemble.results, targetTone)
+    // Judges/model-breakdown views stay hidden — model details aren't shown to learners.
+    $('td-judges-wrap').classList.add('hidden')
+
     $('td-q-result').classList.remove('hidden')
     $('td-prog-score').textContent = `Score: ${score}`
     showToast(passed)
 
-    // Prepare accuracy log entry and show confirm buttons
+    // Accuracy log: store first-syllable models (existing schema). The whole
+    // question's auto-correct now reflects both syllables.
     const modelVotes = {}
     for (const name of ['azure', 'pitch', 'groq', 'groqTurbo', 'google', 'deepgram', 'whisper', 'classifier']) {
-      const r = ensemble.results.find(r => r.model === name)
+      const r = ens1.results.find(r => r.model === name)
       modelVotes[name] = r ? r.tone : null
     }
     pendingLogEntry = {
       questionNum: currentQ + 1,
       char: q.chars,
       base: q.bases[0],
-      targetTone,
-      ensembleTone: detectedTone,
-      confidence: ensemble.confidence,
-      agreement: ensemble.agreement,
+      targetTone: target1,
+      ensembleTone: detected1,
+      confidence: ens1.confidence,
+      agreement: ens1.agreement,
       models: modelVotes,
       autoCorrect: passed,
       timestamp: new Date().toISOString(),
     }
-    $('td-confirm-wrap').classList.remove('hidden')
+    // Accuracy-confirm row stays hidden in the learner-facing UI.
+    $('td-confirm-wrap').classList.add('hidden')
 
     $('td-rec-label').textContent = 'Done'
     $('td-rec-icon').textContent = passed ? '✓' : '✗'
     $('td-rec-status').textContent = passed ? 'Correct!' : 'Not quite'
+  }
+
+  function retryQuestion() {
+    // Reset UI for retry without advancing the question.
+    $('td-q-result').classList.add('hidden')
+    $('td-contour-wrap').classList.add('hidden')
+    $('td-mel-wrap').classList.add('hidden')
+    $('td-judges-wrap').classList.add('hidden')
+    $('td-confirm-wrap').classList.add('hidden')
+    $('td-retry-q').classList.add('hidden')
+    $('td-listen-result').classList.add('hidden')
+    const coachEl = document.getElementById('td-coach-msg')
+    if (coachEl) coachEl.style.display = 'none'
+    $('td-rec-label').textContent = 'Tap to Record'
+    $('td-rec-icon').textContent = '🎤'
+    $('td-rec-status').textContent = 'Try again!'
+    $('td-record').disabled = false
+    $('td-listen').disabled = false
+    pendingLogEntry = null
+    // Revert the wrong answer that was already pushed/counted
+    const lastAnswer = answers[answers.length - 1]
+    if (lastAnswer && !lastAnswer.passed) {
+      answers.pop()
+    }
   }
 
   function nextQuestion() {
@@ -562,6 +648,68 @@ export function testDView(container) {
 
     // User (solid)
     drawLine(userContour, '#f87171', 3)
+  }
+
+  // ── Two-panel pitch contour for the disyllabic question ──
+  // Left panel = first syllable, right panel = second syllable. Each panel
+  // shows target (dashed blue) vs user (solid red).
+  function drawDisyllableContour(u1, t1, u2, t2) {
+    const canvas = $('td-canvas')
+    const ctx = canvas.getContext('2d')
+    const W = canvas.width
+    const H = canvas.height
+    const pad = 20
+    const gap = 18
+    const panelW = (W - 2 * pad - gap) / 2
+    const panel1X = pad
+    const panel2X = pad + panelW + gap
+
+    ctx.clearRect(0, 0, W, H)
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.6)'
+    ctx.fillRect(0, 0, W, H)
+
+    function drawPanel(x, w, userContour, targetContour, label) {
+      // Grid lines (pitch levels 1-5)
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.15)'
+      ctx.lineWidth = 1
+      for (let lv = 1; lv <= 5; lv++) {
+        const y = H - pad - ((lv - 1) / 4) * (H - 2 * pad)
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        ctx.lineTo(x + w, y)
+        ctx.stroke()
+      }
+
+      function drawLine(points, color, lineWidth, dashed) {
+        if (!points || points.length < 2) return
+        ctx.beginPath()
+        ctx.strokeStyle = color
+        ctx.lineWidth = lineWidth
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.setLineDash(dashed ? [6, 4] : [])
+        for (let i = 0; i < points.length; i++) {
+          const px = x + (i / (points.length - 1)) * w
+          const py = H - pad - ((points[i] - 1) / 4) * (H - 2 * pad)
+          if (i === 0) ctx.moveTo(px, py)
+          else ctx.lineTo(px, py)
+        }
+        ctx.stroke()
+        ctx.setLineDash([])
+      }
+
+      drawLine(targetContour, 'rgba(56, 189, 248, 0.7)', 3, true)
+      drawLine(userContour, '#f87171', 3, false)
+
+      // Panel label
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.7)'
+      ctx.font = '11px system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(label, x + w / 2, 14)
+    }
+
+    drawPanel(panel1X, panelW, u1, t1, '1st syllable')
+    drawPanel(panel2X, panelW, u2, t2, '2nd syllable')
   }
 
   // ── Draw mel-spectrogram debug view ──
@@ -641,7 +789,7 @@ export function testDView(container) {
 
     // Tone breakdown (based on first character's tone)
     const toneColors = { 1: 'var(--tone1)', 2: 'var(--tone2)', 3: 'var(--tone3)', 4: 'var(--tone4)' }
-    const toneNames = { 1: '1st (High)', 2: '2nd (Rising)', 3: '3rd (Dip)', 4: '4th (Fall)' }
+    const toneNames = { 1: '1st (High ─)', 2: '2nd (Rising ／)', 3: '3rd (Dip ∨)', 4: '4th (Fall ＼)' }
     let toneRows = ''
     for (let t = 1; t <= 4; t++) {
       const qs = answers.filter(a => a.targetTone === t)
@@ -662,7 +810,9 @@ export function testDView(container) {
       const icon = a.passed ? '✅' : '❌'
       const pinyin1 = applyTone(a.bases[0], a.tones[0])
       const pinyin2 = applyTone(a.bases[1], a.tones[1])
-      const detected = a.detectedTone ? `(detected: T${a.detectedTone})` : '(no signal)'
+      const d1 = a.detectedTone ? `T${a.detectedTone}` : '—'
+      const d2 = a.detectedTone2 ? `T${a.detectedTone2}` : '—'
+      const detected = `(detected: ${d1} / ${d2})`
       details += `
         <div class="detail-item">
           <span class="detail-icon">${icon}</span>
@@ -674,8 +824,8 @@ export function testDView(container) {
     })
 
     const verdict = passed
-      ? `🎉 Excellent! You scored <strong>${score}/${TOTAL}</strong>. You can pronounce two-character words well! Your tones stay accurate even in combination.`
-      : `You scored <strong>${score}/${TOTAL}</strong>. Pronouncing tones in two-character words can be tricky. Keep practicing to maintain correct tones in context!`
+      ? `🎉 Fantastic! You scored <strong>${score}/${TOTAL}</strong>. You can pronounce the correct tone combinations almost effortlessly! You nailed it. Now let's try to crack the tones of the most frequently used Chinese characters and words.`
+      : `You scored <strong>${score}/${TOTAL}</strong>. Fluctuation in performance when producing foreign sounds is totally expected. Want to retake the test, or go straight to practice?`
 
     el.innerHTML = `
       <div class="app-shell animate-in">
@@ -699,10 +849,13 @@ export function testDView(container) {
         </div>
 
         <div class="report-actions">
-          <button class="btn btn-secondary" id="td-retry">🔄 Retake</button>
-          <button class="btn btn-primary" id="td-continue">
-            ${passed ? '→ Continue' : '→ Practice Pronunciation'}
-          </button>
+          ${passed ? `
+            <button class="btn btn-secondary" id="td-retry">🔄 Retake</button>
+            <button class="btn btn-primary" id="td-continue">→ Continue to Test X</button>
+          ` : `
+            <button class="btn btn-primary" id="td-retry">🔄 Retake the Test</button>
+            <button class="btn btn-primary" id="td-continue">🎤 Disyllabic Words Tone Practice</button>
+          `}
         </div>
       </div>
     `
@@ -710,9 +863,11 @@ export function testDView(container) {
     document.getElementById('td-retry').addEventListener('click', startTest)
     document.getElementById('td-continue').addEventListener('click', () => {
       if (passed) {
-        navigate('/')
+        navigate('/test-xyz')
       } else {
-        navigate('/')
+        sessionStorage.setItem('j4t_practice_set', '1')
+        sessionStorage.setItem('j4t_practice_return', '/test-d')
+        navigate('/practice-production')
       }
     })
   }
@@ -723,6 +878,7 @@ export function testDView(container) {
     clearTimeout(recordTimer)
     clearTimeout(silenceTimer)
     clearInterval(levelInterval)
+    stopAllAudio()
   }
 }
 
@@ -882,11 +1038,24 @@ const scopedCSS = `
     margin-top: 16px;
   }
   .td-q-score {
-    font-size: 2rem; font-weight: 700; line-height: 1;
+    font-size: 2.4rem; font-weight: 700; line-height: 1;
   }
   .td-q-msg {
-    font-size: 0.9rem; color: var(--text-secondary);
-    margin: 8px 0 16px;
+    font-size: 1.05rem; color: var(--text-primary);
+    font-weight: 600;
+    margin: 10px 0 16px;
+    line-height: 1.55;
+  }
+  .td-syl-line {
+    display: flex; justify-content: center; gap: 24px;
+    font-size: 1.05rem; color: var(--text-primary);
+    font-weight: 600;
+    margin: 12px 0 16px;
+  }
+  .td-syl-line .ok { color: var(--correct); }
+  .td-syl-line .bad { color: var(--incorrect); }
+  .td-result-actions {
+    display: flex; gap: 10px; justify-content: center; margin-top: 4px;
   }
   .td-confirm-wrap {
     display: flex; align-items: center; justify-content: center; gap: 10px;

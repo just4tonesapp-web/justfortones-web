@@ -1,14 +1,14 @@
 // ═══════════════════════════════════════
-// Test XYZ – Character Tone Knowledge
-// (3 rounds × 12 items from top 50 chars)
+// Test X – Character Tone Knowledge
+// 50 items from the top 50 most-frequent Chinese characters.
+// Pass at 40+. Saves result under test_type 'X'.
+// (File still named testXYZView.js for git-history continuity.)
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
 import { saveResult } from '../services/progressService.js'
 
-const TOTAL = 12
-const PASS_SCORE = 10
-const ROUNDS = 3
-const ROUND_LABELS = ['X', 'Y', 'Z']
+const TOTAL = 50
+const PASS_SCORE = 40
 
 function shuffle(arr) {
   const a = [...arr]
@@ -19,11 +19,12 @@ function shuffle(arr) {
   return a
 }
 
+// Variable-tone (一/不) and neutral-particle (了/的/得/地) characters were
+// removed — they belong in a separate practice. 小 was swapped in per Qi.
+// A few common single-tone characters (学/看/好/开) were added to keep the
+// pool near 50 items.
 const CHAR_POOL = [
-  { char: '一', base: 'yi', tone: 1, meaning: 'one' },
-  { char: '不', base: 'bu', tone: 4, meaning: 'not' },
   { char: '是', base: 'shi', tone: 4, meaning: 'is' },
-  { char: '了', base: 'le', tone: 5, meaning: '(particle)' },
   { char: '在', base: 'zai', tone: 4, meaning: 'at/in' },
   { char: '有', base: 'you', tone: 3, meaning: 'have' },
   { char: '我', base: 'wo', tone: 3, meaning: 'I/me' },
@@ -36,13 +37,11 @@ const CHAR_POOL = [
   { char: '到', base: 'dao', tone: 4, meaning: 'arrive' },
   { char: '说', base: 'shuo', tone: 1, meaning: 'speak' },
   { char: '和', base: 'he', tone: 2, meaning: 'and' },
-  { char: '地', base: 'di', tone: 4, meaning: 'earth' },
   { char: '出', base: 'chu', tone: 1, meaning: 'go out' },
   { char: '道', base: 'dao', tone: 4, meaning: 'way/road' },
   { char: '也', base: 'ye', tone: 3, meaning: 'also' },
   { char: '时', base: 'shi', tone: 2, meaning: 'time' },
   { char: '年', base: 'nian', tone: 2, meaning: 'year' },
-  { char: '得', base: 'de', tone: 2, meaning: 'get' },
   { char: '就', base: 'jiu', tone: 4, meaning: 'then' },
   { char: '那', base: 'na', tone: 4, meaning: 'that' },
   { char: '要', base: 'yao', tone: 4, meaning: 'want' },
@@ -70,22 +69,27 @@ const CHAR_POOL = [
   { char: '没', base: 'mei', tone: 2, meaning: 'not have' },
   { char: '所', base: 'suo', tone: 3, meaning: 'place' },
   { char: '个', base: 'ge', tone: 4, meaning: 'measure word' },
+  { char: '小', base: 'xiao', tone: 3, meaning: 'small' },
+  { char: '学', base: 'xue', tone: 2, meaning: 'study' },
+  { char: '看', base: 'kan', tone: 4, meaning: 'look' },
+  { char: '好', base: 'hao', tone: 3, meaning: 'good' },
+  { char: '开', base: 'kai', tone: 1, meaning: 'open' },
 ]
 
 const TONE_CHOICES = [
-  { value: 5, label: 'Neutral (轻声)' },
-  { value: 1, label: '1st tone (一声)' },
-  { value: 2, label: '2nd tone (二声)' },
-  { value: 3, label: '3rd tone (三声)' },
-  { value: 4, label: '4th tone (四声)' },
+  { value: 5, label: 'Neutral · (轻声)' },
+  { value: 1, label: '1st tone ─ (一声)' },
+  { value: 2, label: '2nd tone ／ (二声)' },
+  { value: 3, label: '3rd tone ∨ (三声)' },
+  { value: 4, label: '4th tone ＼ (四声)' },
 ]
 
 const TONE_NAMES = {
-  1: '1st (High)',
-  2: '2nd (Rising)',
-  3: '3rd (Dip)',
-  4: '4th (Fall)',
-  5: 'Neutral',
+  1: '1st (High ─)',
+  2: '2nd (Rising ／)',
+  3: '3rd (Dip ∨)',
+  4: '4th (Fall ＼)',
+  5: 'Neutral ·',
 }
 
 const TONE_COLORS = {
@@ -103,7 +107,6 @@ function toneLabel(t) {
 
 export function testXYZView(container) {
   // ── State ──
-  let round = 0
   let questions = []
   let currentQ = 0
   let score = 0
@@ -111,24 +114,21 @@ export function testXYZView(container) {
   let answers = []
   let qStart = 0
   let testStart = 0
-  let usedIndices = []  // track chars used across rounds
-  let roundScores = []  // scores for each round
-  let allAnswers = []   // answers across all rounds
 
-  // ── Generate 12 questions for current round ──
+  // ── Generate all 50 questions from the top-50 char pool ──
   function generate() {
-    const available = CHAR_POOL.map((c, i) => i).filter(i => !usedIndices.includes(i))
-    const picked = shuffle(available).slice(0, TOTAL)
-    usedIndices.push(...picked)
-    questions = picked.map(i => ({ ...CHAR_POOL[i] }))
+    questions = shuffle(CHAR_POOL).map(c => ({ ...c }))
   }
 
   // ── Mount ──
   container.innerHTML = `
     <div class="app-shell">
+      <div class="back-row">
+        <button class="back-home-btn" id="txyz-home">← Home</button>
+      </div>
       <div class="txyz-header">
         <span class="badge">Diagnostic Step 3</span>
-        <h1>Tests X, Y, Z — Character Tones</h1>
+        <h1>Test X — Character Tones</h1>
         <p>Do you know the tones of the following characters?</p>
       </div>
 
@@ -137,15 +137,15 @@ export function testXYZView(container) {
         <div style="font-size:3rem;margin-bottom:16px">📝</div>
         <h2>Character Tone Knowledge</h2>
         <p style="color:var(--text-secondary);margin:12px 0;line-height:1.6">
-          You'll see 36 characters from the top 50 most frequently used<br>
-          Chinese characters, split into 3 rounds of 12.
+          Do you know the top 50 frequently used Chinese characters cover 60%<br>
+          of all texts that are written in Chinese? Let's see if you know their tones!
         </p>
         <div class="intro-rules">
           <strong>How it works:</strong><br>
-          — 3 rounds (X, Y, Z), 12 questions each<br>
+          — ${TOTAL} questions covering the top 50 characters<br>
           — Each question shows a character and its pinyin base<br>
           — Pick the correct tone (neutral, 1st, 2nd, 3rd, or 4th)<br>
-          — Score ${PASS_SCORE}+ on ALL three rounds to pass ✓
+          — Score ${PASS_SCORE}+ to pass ✓
         </div>
         <button class="btn btn-primary btn-lg" id="txyz-start">Start Test</button>
       </div>
@@ -154,7 +154,7 @@ export function testXYZView(container) {
       <div id="txyz-quiz" class="hidden">
         <div class="progress-wrap">
           <div class="progress-info">
-            <span id="txyz-prog-label">Round X — Question 1 of ${TOTAL}</span>
+            <span id="txyz-prog-label">Question 1 of ${TOTAL}</span>
             <span class="progress-score" id="txyz-prog-score">Score: 0</span>
           </div>
           <div class="progress-track">
@@ -171,9 +171,6 @@ export function testXYZView(container) {
         </div>
       </div>
 
-      <!-- Round Report -->
-      <div id="txyz-round-report" class="hidden"></div>
-
       <!-- Final Report -->
       <div id="txyz-report" class="hidden"></div>
     </div>
@@ -187,29 +184,19 @@ export function testXYZView(container) {
 
   // ── Bind ──
   const $ = (id) => document.getElementById(id)
+  $('txyz-home').addEventListener('click', () => navigate('/'))
   $('txyz-start').addEventListener('click', startTest)
 
   // ── Actions ──
   function startTest() {
-    round = 0
-    usedIndices = []
-    roundScores = []
-    allAnswers = []
-    $('txyz-intro').classList.add('hidden')
-    $('txyz-report').classList.add('hidden')
-    $('txyz-round-report').classList.add('hidden')
-    startRound()
-  }
-
-  function startRound() {
     generate()
     currentQ = 0
     score = 0
     answers = []
     testStart = Date.now()
-    $('txyz-quiz').classList.remove('hidden')
-    $('txyz-round-report').classList.add('hidden')
+    $('txyz-intro').classList.add('hidden')
     $('txyz-report').classList.add('hidden')
+    $('txyz-quiz').classList.remove('hidden')
     loadQ()
   }
 
@@ -217,9 +204,8 @@ export function testXYZView(container) {
     answered = false
     qStart = Date.now()
     const q = questions[currentQ]
-    const label = ROUND_LABELS[round]
 
-    $('txyz-prog-label').textContent = `Round ${label} — Question ${currentQ + 1} of ${TOTAL}`
+    $('txyz-prog-label').textContent = `Question ${currentQ + 1} of ${TOTAL}`
     $('txyz-prog-score').textContent = `Score: ${score}`
     $('txyz-prog-fill').style.width = `${(currentQ / TOTAL) * 100}%`
 
@@ -276,7 +262,7 @@ export function testXYZView(container) {
 
     setTimeout(() => {
       currentQ++
-      if (currentQ >= TOTAL) finishRound()
+      if (currentQ >= TOTAL) finishTest()
       else loadQ()
     }, 1600)
   }
@@ -293,51 +279,35 @@ export function testXYZView(container) {
     setTimeout(() => t.classList.remove('show'), 1200)
   }
 
-  function finishRound() {
-    const label = ROUND_LABELS[round]
-    saveResult(label, score, TOTAL)
-    roundScores.push(score)
-    allAnswers.push([...answers])
-    round++
-
+  function finishTest() {
+    saveResult('X', score, TOTAL)
     $('txyz-quiz').classList.add('hidden')
-
-    if (round < ROUNDS) {
-      showRoundReport()
-    } else {
-      showFinalReport()
-    }
+    showFinalReport()
   }
 
-  // ── Round Report (between rounds) ──
-  function showRoundReport() {
-    const el = $('txyz-round-report')
+  // ── Final Report (single test) ──
+  function showFinalReport() {
+    const el = $('txyz-report')
     el.classList.remove('hidden')
 
-    const prevLabel = ROUND_LABELS[round - 1]
-    const nextLabel = ROUND_LABELS[round]
-    const prevScore = roundScores[round - 1]
-    const pct = Math.round((prevScore / TOTAL) * 100)
-    const prevAnswers = allAnswers[round - 1]
-    const passed = prevScore >= PASS_SCORE
+    const pct = Math.round((score / TOTAL) * 100)
+    const passed = score >= PASS_SCORE
+    const toneRows = buildToneRows(answers)
+    const details = buildDetails(answers)
 
-    const toneRows = buildToneRows(prevAnswers)
-    const details = buildDetails(prevAnswers)
+    const verdict = passed
+      ? `🎉 Impressive! You really know your characters well! Now let's try to crack the tones of the most frequently used disyllabic Chinese words.`
+      : `You scored <strong>${score}/${TOTAL}</strong> overall. Let's work on the tones of the most frequently used Chinese characters. Do you know the top 50 frequently used Chinese characters cover 60% of all texts that are written in Chinese?`
 
     el.innerHTML = `
       <div class="app-shell animate-in">
         <div class="text-center" style="margin-bottom:28px">
-          <h2 style="font-size:1.5rem;margin-bottom:4px">Round ${prevLabel} — Results</h2>
+          <h2 style="font-size:1.5rem;margin-bottom:4px">Test X — Results</h2>
           <div class="score-ring" style="--pct:${pct}">
-            <span class="score-num">${prevScore}/${TOTAL}</span>
+            <span class="score-num">${score}/${TOTAL}</span>
             <span class="score-label">${pct}%</span>
           </div>
-          <div style="color:var(--text-secondary);line-height:1.5;padding:0 12px">
-            ${passed
-              ? `Great job on Round ${prevLabel}! You scored <strong>${prevScore}/${TOTAL}</strong>.`
-              : `You scored <strong>${prevScore}/${TOTAL}</strong> on Round ${prevLabel}. Keep going!`
-            }
-          </div>
+          <div style="color:var(--text-secondary);line-height:1.5;padding:0 12px">${verdict}</div>
         </div>
 
         <div class="card" style="margin-bottom:16px">
@@ -351,84 +321,24 @@ export function testXYZView(container) {
         </div>
 
         <div class="report-actions">
-          <button class="btn btn-primary btn-lg" id="txyz-next-round" style="width:100%">
-            → Continue to Round ${nextLabel}
-          </button>
-        </div>
-      </div>
-    `
-
-    document.getElementById('txyz-next-round').addEventListener('click', () => {
-      el.classList.add('hidden')
-      startRound()
-    })
-  }
-
-  // ── Final Report ──
-  function showFinalReport() {
-    const el = $('txyz-report')
-    el.classList.remove('hidden')
-
-    const totalScore = roundScores.reduce((a, b) => a + b, 0)
-    const totalQuestions = TOTAL * ROUNDS
-    const pct = Math.round((totalScore / totalQuestions) * 100)
-    const passedAll = roundScores.every(s => s >= PASS_SCORE)
-
-    // Combined answers for tone breakdown
-    const combined = allAnswers.flat()
-    const toneRows = buildToneRows(combined)
-
-    // Round summary cards
-    let roundCards = ''
-    ROUND_LABELS.forEach((label, i) => {
-      const s = roundScores[i]
-      const p = Math.round((s / TOTAL) * 100)
-      const pass = s >= PASS_SCORE
-      const details = buildDetails(allAnswers[i])
-      roundCards += `
-        <div class="card" style="margin-bottom:16px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <h3 class="section-head" style="margin-bottom:0">Round ${label}</h3>
-            <span class="round-badge ${pass ? 'pass' : 'fail'}">${s}/${TOTAL} ${pass ? '✓' : '✗'}</span>
-          </div>
-          ${details}
-        </div>`
-    })
-
-    const verdict = passedAll
-      ? `🎉 Wow you know the tones of the most frequently used Chinese characters well! Let's see if you can pronounce them in sentences!`
-      : `You scored <strong>${totalScore}/${totalQuestions}</strong> overall. Let's work on the tones of the most frequently used Chinese characters. Do you know the top 50 frequently used Chinese characters cover 60% of all texts that are written in Chinese?`
-
-    el.innerHTML = `
-      <div class="app-shell animate-in">
-        <div class="text-center" style="margin-bottom:28px">
-          <h2 style="font-size:1.5rem;margin-bottom:4px">Tests X, Y, Z — Final Results</h2>
-          <div class="score-ring" style="--pct:${pct}">
-            <span class="score-num">${totalScore}/${totalQuestions}</span>
-            <span class="score-label">${pct}%</span>
-          </div>
-          <div style="color:var(--text-secondary);line-height:1.5;padding:0 12px">${verdict}</div>
-        </div>
-
-        <div class="card" style="margin-bottom:16px">
-          <h3 class="section-head">Overall Tone Breakdown</h3>
-          ${toneRows}
-        </div>
-
-        ${roundCards}
-
-        <div class="report-actions">
-          <button class="btn btn-secondary" id="txyz-retry">🔄 Retake</button>
-          <button class="btn btn-primary" id="txyz-continue">
-            ${passedAll ? '→ Practice Sentences' : '→ Practice Characters'}
-          </button>
+          ${passed ? `
+            <button class="btn btn-secondary" id="txyz-retry">🔄 Retake</button>
+            <button class="btn btn-primary" id="txyz-continue">→ Continue to Test Y</button>
+          ` : `
+            <button class="btn btn-primary" id="txyz-retry">🔄 Retake the Test</button>
+            <button class="btn btn-primary" id="txyz-continue">📚 Practice Makes Perfect!</button>
+          `}
         </div>
       </div>
     `
 
     document.getElementById('txyz-retry').addEventListener('click', startTest)
     document.getElementById('txyz-continue').addEventListener('click', () => {
-      navigate('/practice-characters')
+      if (passed) {
+        navigate('/test-y')
+      } else {
+        navigate('/practice-characters')
+      }
     })
   }
 

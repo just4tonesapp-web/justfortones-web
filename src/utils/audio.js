@@ -2,6 +2,7 @@
 // Audio helpers: tone synthesis & speech
 // ═══════════════════════════════════════
 import { hasRecording } from './recordingsManifest.js'
+import { findDisyllableRecording } from './disyllableManifest.js'
 
 let audioCtx = null
 
@@ -11,6 +12,35 @@ export function ensureAudioCtx() {
   }
   if (audioCtx.state === 'suspended') audioCtx.resume()
   return audioCtx
+}
+
+// ── Active-audio tracking — lets us cancel any in-flight playback ──
+const _activeAudios = new Set()
+
+/**
+ * Stop every audio element currently playing AND any browser speechSynthesis
+ * utterance. Call this when advancing to a new question so that lingering
+ * audio from the previous question doesn't keep playing.
+ */
+export function stopAllAudio() {
+  if ('speechSynthesis' in window) {
+    try { speechSynthesis.cancel() } catch (e) { /* ignore */ }
+  }
+  for (const a of _activeAudios) {
+    try {
+      a.pause()
+      a.currentTime = 0
+    } catch (e) { /* ignore */ }
+  }
+  _activeAudios.clear()
+}
+
+function trackAudio(a) {
+  _activeAudios.add(a)
+  const cleanup = () => _activeAudios.delete(a)
+  a.addEventListener('ended', cleanup)
+  a.addEventListener('error', cleanup)
+  a.addEventListener('pause', cleanup)
 }
 
 /**
@@ -68,6 +98,7 @@ export function playToneSynth(toneNumber, duration = 0.8) {
  * @param {Function} [onEnd]
  */
 export function speakChinese(char, tone, onEnd) {
+  stopAllAudio()
   if ('speechSynthesis' in window && char) {
     const u = new SpeechSynthesisUtterance(char)
     u.lang = 'zh-CN'
@@ -105,6 +136,7 @@ if ('speechSynthesis' in window) {
  * @param {Function} [onEnd] callback fired when playback (or fallback) finishes
  */
 export function playSyllable(syllable, tone, onEnd) {
+  stopAllAudio()
   if (!hasRecording(syllable, tone)) {
     const d = playToneSynth(tone)
     setTimeout(() => onEnd?.(), d * 1000 + 100)
@@ -112,6 +144,7 @@ export function playSyllable(syllable, tone, onEnd) {
   }
   const url = `${import.meta.env.BASE_URL}audio/syllables/${syllable}${tone}.m4a`
   const audio = new Audio(url)
+  trackAudio(audio)
   let done = false
   const finish = () => { if (done) return; done = true; onEnd?.() }
   audio.addEventListener('ended', finish)
@@ -126,5 +159,40 @@ export function playSyllable(syllable, tone, onEnd) {
     done = true
     const d = playToneSynth(tone)
     setTimeout(() => onEnd?.(), d * 1000 + 100)
+  })
+}
+
+/**
+ * Play the human-recorded m4a for a disyllabic combo (Test B / D).
+ * Falls back to playing both syllables sequentially via playSyllable, then synth.
+ */
+export function playDisyllable(syl1, tone1, syl2, tone2, onEnd) {
+  stopAllAudio()
+  const rel = findDisyllableRecording(syl1, tone1, syl2, tone2)
+  if (!rel) {
+    playSyllable(syl1, tone1, () => {
+      setTimeout(() => playSyllable(syl2, tone2, onEnd), 120)
+    })
+    return
+  }
+  const url = `${import.meta.env.BASE_URL}${rel}`
+  const audio = new Audio(url)
+  trackAudio(audio)
+  let done = false
+  const finish = () => { if (done) return; done = true; onEnd?.() }
+  audio.addEventListener('ended', finish)
+  audio.addEventListener('error', () => {
+    if (done) return
+    done = true
+    playSyllable(syl1, tone1, () => {
+      setTimeout(() => playSyllable(syl2, tone2, onEnd), 120)
+    })
+  })
+  audio.play().catch(() => {
+    if (done) return
+    done = true
+    playSyllable(syl1, tone1, () => {
+      setTimeout(() => playSyllable(syl2, tone2, onEnd), 120)
+    })
   })
 }

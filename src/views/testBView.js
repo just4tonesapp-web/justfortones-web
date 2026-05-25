@@ -3,17 +3,21 @@
 // Identical to Test A but with two-character combos
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
-import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle, makeTwoSyllableItem } from '../utils/pinyin.js'
-import { speakChinese } from '../utils/audio.js'
+import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle, makeTwoSyllableItem, hasCharacter } from '../utils/pinyin.js'
+import { speakChinese, playDisyllable } from '../utils/audio.js'
+import { DISYLLABLE_BY_PAIR, hasDisyllableRecording } from '../utils/disyllableManifest.js'
 import { saveResult } from '../services/progressService.js'
 
 const TOTAL = 12
-const PASS_SCORE = 10
+const PASS_SCORE = 7
 
-// Pre-build all 16 tone pair combos, then pick 12 ensuring variety
+// Pre-build all 15 tone pair combos (3+3 omitted — that combination follows
+// tone-3 sandhi in natural speech and would mismatch the written tones), then
+// pick 12 ensuring variety.
 const ALL_PAIRS = []
 for (let a = 1; a <= 4; a++) {
   for (let b = 1; b <= 4; b++) {
+    if (a === 3 && b === 3) continue
     ALL_PAIRS.push([a, b])
   }
 }
@@ -27,19 +31,43 @@ export function testBView(container) {
   let qStart = 0
   let testStart = 0
 
-  // Generate 12 two-syllable questions
-  // Each of the 4 tones appears at least ~3 times across the 24 syllable slots
+  // Items used in the previous attempt — excluded on retake.
+  let previousFiles = new Set()
+
+  // Generate 12 two-syllable questions, drawing from real recordings.
+  // Falls back to synthesized syllables for any tone-pair without recordings.
   function generate() {
-    // Pick 12 random tone pairs from the 16 combos
     const pairs = shuffle(ALL_PAIRS).slice(0, 12)
-    const pool = shuffle(SYLLABLE_POOL)
-    let poolIdx = 0
+    const usedFiles = new Set()
+
+    const pickRecorded = (t1, t2) => {
+      const key = `${t1}${t2}`
+      const items = DISYLLABLE_BY_PAIR[key] || []
+      const fresh = items.filter(it => !usedFiles.has(`${key}/${it.file}`) && !previousFiles.has(`${key}/${it.file}`))
+      const cand = items.filter(it => !usedFiles.has(`${key}/${it.file}`))
+      const pool = fresh.length ? fresh : (cand.length ? cand : items)
+      if (!pool.length) return null
+      const hit = pool[Math.floor(Math.random() * pool.length)]
+      usedFiles.add(`${key}/${hit.file}`)
+      return { syl1: hit.syl1, tone1: t1, syl2: hit.syl2, tone2: t2, file: hit.file, pairKey: key }
+    }
+
+    const usedSyls = new Set()
+    const pickSynth = (tone) => {
+      const cand = SYLLABLE_POOL.filter(s => !usedSyls.has(s) && hasCharacter(s, tone))
+      const pool = cand.length ? cand : SYLLABLE_POOL.filter(s => hasCharacter(s, tone))
+      const pick = pool[Math.floor(Math.random() * pool.length)]
+      usedSyls.add(pick)
+      return pick
+    }
 
     questions = pairs.map(([t1, t2]) => {
-      const syl1 = pool[poolIdx++]
-      const syl2 = pool[poolIdx++]
-      return { syl1, tone1: t1, syl2, tone2: t2 }
+      return pickRecorded(t1, t2) || {
+        syl1: pickSynth(t1), tone1: t1,
+        syl2: pickSynth(t2), tone2: t2,
+      }
     })
+    previousFiles = new Set(questions.filter(q => q.file).map(q => `${q.pairKey}/${q.file}`))
   }
 
   // Build 4 choices: correct pair + 3 distractors (vary tone combos)
@@ -47,10 +75,11 @@ export function testBView(container) {
     const correct = { t1: q.tone1, t2: q.tone2 }
     const choices = [correct]
 
-    // Generate 3 unique distractor tone combos
+    // Generate 3 unique distractor tone combos — exclude 3+3 (sandhi)
     const allCombos = []
     for (let a = 1; a <= 4; a++) {
       for (let b = 1; b <= 4; b++) {
+        if (a === 3 && b === 3) continue
         if (a !== correct.t1 || b !== correct.t2) {
           allCombos.push({ t1: a, t2: b })
         }
@@ -65,6 +94,9 @@ export function testBView(container) {
   // ── Mount ──
   container.innerHTML = `
     <div class="app-shell">
+      <div class="back-row">
+        <button class="back-home-btn" id="tb-home">← Home</button>
+      </div>
       <div class="testb-header">
         <span class="badge">Diagnostic Step 1b</span>
         <h1>Test B — Tone Pairs</h1>
@@ -121,6 +153,7 @@ export function testBView(container) {
   container.appendChild(style)
 
   const $ = (id) => document.getElementById(id)
+  $('tb-home').addEventListener('click', () => navigate('/'))
   $('tb-start').addEventListener('click', startTest)
   $('tb-play').addEventListener('click', playCurrent)
 
@@ -176,13 +209,20 @@ export function testBView(container) {
     btn.classList.add('playing')
     $('tb-hint').textContent = 'Listening…'
 
-    // Speak first syllable, then second
-    const char1 = getTTSChar(q.syl1, q.tone1) ?? ''
-    const char2 = getTTSChar(q.syl2, q.tone2) ?? ''
-    speakChinese(char1 + char2 || null, q.tone1, () => {
+    const done = () => {
       btn.classList.remove('playing')
       $('tb-hint').textContent = 'Tap to replay'
-    })
+    }
+
+    if (hasDisyllableRecording(q.syl1, q.tone1, q.syl2, q.tone2)) {
+      playDisyllable(q.syl1, q.tone1, q.syl2, q.tone2, done)
+      return
+    }
+
+    // No recording — fall back to TTS of any known characters
+    const char1 = getTTSChar(q.syl1, q.tone1) ?? ''
+    const char2 = getTTSChar(q.syl2, q.tone2) ?? ''
+    speakChinese(char1 + char2 || null, q.tone1, done)
   }
 
   function pick(selected, btnEl) {
@@ -267,9 +307,9 @@ export function testBView(container) {
 
     let verdict = ''
     if (passed) {
-      verdict = `🎉 Excellent! You scored <strong>${score}/${TOTAL}</strong> on Test B. It seems that you can identify and distinguish the four tones competently! Now let's see if you can pronounce the four tones like a Chinese native!`
+      verdict = `🎉 Fantastic! You scored <strong>${score}/${TOTAL}</strong> on Test B. You can identify and distinguish the four tones effortlessly! Now let's see if you can pronounce the four tones like a Chinese native!`
     } else {
-      verdict = `You scored <strong>${score}/${TOTAL}</strong> on Test B. It seems that you have some work to do with your ears! Let's practice tone recognition.`
+      verdict = `You scored <strong>${score}/${TOTAL}</strong> on Test B. Fluctuation in performance when listening to foreign sounds is totally expected. Want to retake the test, or go straight to practice?`
     }
 
     el.innerHTML = `
@@ -289,10 +329,13 @@ export function testBView(container) {
         </div>
 
         <div class="report-actions">
-          <button class="btn btn-secondary" id="tb-retry">🔄 Retake</button>
-          <button class="btn btn-primary" id="tb-continue">
-            ${passed ? '→ Continue to Step 2' : '→ Practice Tones'}
-          </button>
+          ${passed ? `
+            <button class="btn btn-secondary" id="tb-retry">🔄 Retake</button>
+            <button class="btn btn-primary" id="tb-continue">→ Continue to Test C</button>
+          ` : `
+            <button class="btn btn-primary" id="tb-retry">🔄 Retake the Test</button>
+            <button class="btn btn-primary" id="tb-continue">🎧 Disyllabic Words Practice</button>
+          `}
         </div>
       </div>
     `
@@ -302,6 +345,8 @@ export function testBView(container) {
       if (passed) {
         navigate('/test-c')
       } else {
+        sessionStorage.setItem('j4t_practice_set', '1')
+        sessionStorage.setItem('j4t_practice_return', '/test-b')
         navigate('/practice-recognition')
       }
     })

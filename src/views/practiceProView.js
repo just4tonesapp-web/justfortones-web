@@ -1,16 +1,16 @@
 // ═══════════════════════════════════════
 // Interface III – Tone Production Practice
-// Infinite record-and-feedback practice.
-// Users see a character, record voice,
-// get immediate AI feedback (not graded).
+// Two tabs: Single Syllables (after Test C) / Disyllabic Words (after Test D)
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
 import { applyTone } from '../utils/pinyin.js'
-import { speakChinese } from '../utils/audio.js'
+import { playSyllable, playDisyllable, stopAllAudio } from '../utils/audio.js'
 import { AudioEngine } from '../utils/audioEngine.js'
 import { toneDetector } from '../utils/toneDetector.js'
+import { splitDisyllableAudio } from '../utils/audioSplit.js'
+import { pickPraise } from '../utils/testCFeedback.js'
 
-const TONE_ARROWS = { 1: '‾', 2: '↗', 3: '↘↗', 4: '↘' }
+const TONE_ARROWS = { 1: '─', 2: '／', 3: '∨', 4: '＼' }
 
 const TONE_HINTS = {
   1: 'Keep your voice high and flat — like singing one steady note',
@@ -19,6 +19,7 @@ const TONE_HINTS = {
   4: 'Start high and fall sharply — like a stern "no!"',
 }
 
+// Single-character pool (Test C-style)
 const CHAR_POOL = [
   { char: '妈', base: 'ma', tone: 1, meaning: 'mother' },
   { char: '书', base: 'shu', tone: 1, meaning: 'book' },
@@ -36,6 +37,25 @@ const CHAR_POOL = [
   { char: '去', base: 'qu', tone: 4, meaning: 'go' },
   { char: '饭', base: 'fan', tone: 4, meaning: 'rice' },
   { char: '看', base: 'kan', tone: 4, meaning: 'look' },
+]
+
+// Disyllabic word pool (Test D-style). All entries here are also present in
+// public/audio/disyllables/ so playDisyllable() will use real recordings.
+const DISYLLABLE_POOL = [
+  { chars: '小学', bases: ['xiao','xue'], tones: [3,2], meaning: 'primary school' },
+  { chars: '大家', bases: ['da','jia'],   tones: [4,1], meaning: 'everyone' },
+  { chars: '中国', bases: ['zhong','guo'],tones: [1,2], meaning: 'China' },
+  { chars: '学生', bases: ['xue','sheng'],tones: [2,1], meaning: 'student' },
+  { chars: '老师', bases: ['lao','shi'],  tones: [3,1], meaning: 'teacher' },
+  { chars: '再见', bases: ['zai','jian'], tones: [4,4], meaning: 'goodbye' },
+  { chars: '明天', bases: ['ming','tian'],tones: [2,1], meaning: 'tomorrow' },
+  { chars: '今天', bases: ['jin','tian'], tones: [1,1], meaning: 'today' },
+  { chars: '说话', bases: ['shuo','hua'], tones: [1,4], meaning: 'speak' },
+  { chars: '走路', bases: ['zou','lu'],   tones: [3,4], meaning: 'walk' },
+  { chars: '电话', bases: ['dian','hua'], tones: [4,4], meaning: 'phone' },
+  { chars: '飞机', bases: ['fei','ji'],   tones: [1,1], meaning: 'airplane' },
+  { chars: '汉语', bases: ['han','yu'],   tones: [4,3], meaning: 'Chinese language' },
+  { chars: '高兴', bases: ['gao','xing'], tones: [1,4], meaning: 'glad' },
 ]
 
 const JUDGE_PERSONAS = {
@@ -60,7 +80,27 @@ function shuffleArray(arr) {
   return a
 }
 
+const SET_SIZE = 12
+const PER_TONE = 3
+
 export function practiceProView(container) {
+  // Set mode: invoked from a failed Test C/D — fixed 12-item set with end screen.
+  // Infinite mode: home-page entry — endless drilling.
+  const setMode = sessionStorage.getItem('j4t_practice_set') === '1'
+  const returnRoute = sessionStorage.getItem('j4t_practice_return') || '/'
+
+  // Tab: 'single' (Test C) or 'pairs' (Test D). In set mode we lock to the
+  // tab matching where the user came from.
+  let tab = 'single'
+  if (setMode) {
+    tab = returnRoute === '/test-d' ? 'pairs' : 'single'
+  }
+
+  function clearSetMode() {
+    sessionStorage.removeItem('j4t_practice_set')
+    sessionStorage.removeItem('j4t_practice_return')
+  }
+
   const audioEngine = new AudioEngine()
   let current = null
   let pool = []
@@ -73,14 +113,40 @@ export function practiceProView(container) {
   let correct = 0
   let attempts = 0
 
+  // Set-mode state
+  let setIndex = 0
+  let setCorrect = 0
+  let setQueue = []
+
+  // Build a balanced 12-item set: 3 per tone (single) or 12 random pairs
+  function buildSet() {
+    if (tab === 'single') {
+      const items = []
+      for (let t = 1; t <= 4; t++) {
+        const candidates = CHAR_POOL.filter(c => c.tone === t)
+        const picks = shuffleArray(candidates).slice(0, PER_TONE)
+        while (picks.length < PER_TONE && candidates.length) {
+          picks.push(candidates[Math.floor(Math.random() * candidates.length)])
+        }
+        items.push(...picks)
+      }
+      return shuffleArray(items)
+    }
+    return shuffleArray([...DISYLLABLE_POOL]).slice(0, SET_SIZE)
+  }
+
   // Start loading models immediately
   toneDetector.init((model, status, pct) => {
     updateModelStatus()
   })
 
   function pickNext() {
+    if (setMode) {
+      current = setQueue[setIndex]
+      return
+    }
     if (poolIndex >= pool.length) {
-      pool = shuffleArray(CHAR_POOL)
+      pool = shuffleArray(tab === 'single' ? CHAR_POOL : DISYLLABLE_POOL)
       poolIndex = 0
     }
     current = pool[poolIndex++]
@@ -117,14 +183,31 @@ export function practiceProView(container) {
         <p>Record and get instant feedback — practice as much as you like</p>
       </div>
 
+      <!-- Tabs -->
+      <div class="pp-tab-bar">
+        <button class="pp-tab-btn ${tab === 'single' ? 'active' : ''}" id="pp-tab-single">Single Syllables</button>
+        <button class="pp-tab-btn ${tab === 'pairs' ? 'active' : ''}" id="pp-tab-pairs">Disyllabic Words</button>
+      </div>
+
       <div class="pp-model-status" style="color:var(--text-muted);font-size:0.75rem;text-align:center;margin-bottom:16px">
         Loading AI models...
       </div>
 
+      ${setMode ? `
+      <div class="pp-set-progress">
+        <div class="pp-set-row">
+          <span>Question <strong id="pp-set-num">1</strong> of ${SET_SIZE}</span>
+          <span>Correct: <strong id="pp-correct">0</strong></span>
+        </div>
+        <div class="pp-set-bar-track"><div class="pp-set-bar-fill" id="pp-set-bar" style="width:0%"></div></div>
+      </div>
+      <span id="pp-attempts" style="display:none">0</span>
+      ` : `
       <div class="pp-stats-bar">
         <span>Correct: <strong id="pp-correct">0</strong></span>
         <span>Attempts: <strong id="pp-attempts">0</strong></span>
       </div>
+      `}
 
       <div class="card animate-in" id="pp-card">
         <!-- Character display -->
@@ -179,38 +262,153 @@ export function practiceProView(container) {
   updateModelStatus()
 
   // Pick first character
-  pool = shuffleArray(CHAR_POOL)
+  if (setMode) {
+    setQueue = buildSet()
+    setIndex = 0
+    setCorrect = 0
+  } else {
+    pool = shuffleArray(tab === 'single' ? CHAR_POOL : DISYLLABLE_POOL)
+  }
   pickNext()
   loadChar()
+  updateSetProgress()
 
   // ── Event listeners ──
-  $('pp-back').addEventListener('click', () => navigate('/'))
+  $('pp-back').addEventListener('click', () => {
+    stopAllAudio()
+    clearSetMode()
+    navigate(setMode ? returnRoute : '/')
+  })
   $('pp-listen').addEventListener('click', listenExample)
   $('pp-record').addEventListener('click', () => {
     if (!isRecording && !$('pp-record').disabled) startRecording()
   })
   $('pp-retry').addEventListener('click', () => {
-    // Same character, reset recording state
     resetRecordUI()
     $('pp-result').classList.add('hidden')
   })
   $('pp-next').addEventListener('click', () => {
+    if (setMode) {
+      setIndex++
+      if (setIndex >= SET_SIZE) {
+        showSetEnd()
+        return
+      }
+    }
     pickNext()
     loadChar()
+    updateSetProgress()
   })
 
+  $('pp-tab-single').addEventListener('click', () => switchTab('single'))
+  $('pp-tab-pairs').addEventListener('click', () => switchTab('pairs'))
+
+  function switchTab(next) {
+    if (next === tab) return
+    tab = next
+    document.getElementById('pp-tab-single').classList.toggle('active', tab === 'single')
+    document.getElementById('pp-tab-pairs').classList.toggle('active', tab === 'pairs')
+    correct = 0
+    attempts = 0
+    setCorrect = 0
+    setIndex = 0
+    if (setMode) {
+      setQueue = buildSet()
+    } else {
+      pool = shuffleArray(tab === 'single' ? CHAR_POOL : DISYLLABLE_POOL)
+      poolIndex = 0
+    }
+    pickNext()
+    loadChar()
+    updateSetProgress()
+    $('pp-correct').textContent = setMode ? setCorrect : correct
+    $('pp-attempts').textContent = attempts
+  }
+
+  function updateSetProgress() {
+    if (!setMode) return
+    const numEl = document.getElementById('pp-set-num')
+    const barEl = document.getElementById('pp-set-bar')
+    if (numEl) numEl.textContent = Math.min(setIndex + 1, SET_SIZE)
+    if (barEl) barEl.style.width = `${(setIndex / SET_SIZE) * 100}%`
+  }
+
+  function showSetEnd() {
+    const card = $('pp-card')
+    card.innerHTML = `
+      <div class="pp-end">
+        <div class="pp-end-icon">${setCorrect >= 9 ? '🎉' : setCorrect >= 6 ? '👍' : '💪'}</div>
+        <h2 class="pp-end-title">Set complete!</h2>
+        <div class="pp-end-score">${setCorrect}/${SET_SIZE}</div>
+        <p class="pp-end-msg">${setCorrect >= 9
+          ? 'Great work! Your tones are getting consistent.'
+          : setCorrect >= 6
+            ? 'Solid effort — a bit more practice and you\'ll be ready.'
+            : 'Keep going — every set helps your tones lock in.'}</p>
+        <div class="pp-end-actions">
+          <button class="btn btn-secondary" id="pp-end-more">More Practice</button>
+          <button class="btn btn-primary" id="pp-end-test">I'm ready for the test again</button>
+        </div>
+      </div>
+    `
+    document.getElementById('pp-end-more').addEventListener('click', () => {
+      setQueue = buildSet()
+      setIndex = 0
+      setCorrect = 0
+      const card2 = $('pp-card')
+      card2.innerHTML = ORIGINAL_CARD_HTML
+      $('pp-listen').addEventListener('click', listenExample)
+      $('pp-record').addEventListener('click', () => {
+        if (!isRecording && !$('pp-record').disabled) startRecording()
+      })
+      $('pp-retry').addEventListener('click', () => {
+        resetRecordUI()
+        $('pp-result').classList.add('hidden')
+      })
+      $('pp-next').addEventListener('click', () => {
+        setIndex++
+        if (setIndex >= SET_SIZE) { showSetEnd(); return }
+        pickNext()
+        loadChar()
+        updateSetProgress()
+      })
+      pickNext()
+      loadChar()
+      updateSetProgress()
+      document.getElementById('pp-correct').textContent = setCorrect
+      const bar = document.getElementById('pp-set-bar')
+      if (bar) bar.style.width = '0%'
+    })
+    document.getElementById('pp-end-test').addEventListener('click', () => {
+      stopAllAudio()
+      clearSetMode()
+      navigate(returnRoute)
+    })
+  }
+
+  // Snapshot of the original card HTML — used to restore after end screen
+  const ORIGINAL_CARD_HTML = $('pp-card').innerHTML
+
   function loadChar() {
+    stopAllAudio()
     resetRecordUI()
     $('pp-result').classList.add('hidden')
 
-    $('pp-char').textContent = current.char
-    $('pp-pinyin').textContent = applyTone(current.base, current.tone)
-    $('pp-meaning').textContent = current.meaning
-    $('pp-contour').textContent = `Tone ${current.tone}: ${TONE_ARROWS[current.tone]}`
-    $('pp-contour').className = `pp-tone-contour pp-tone-${current.tone}`
+    if (tab === 'single') {
+      $('pp-char').textContent = current.char
+      $('pp-pinyin').textContent = applyTone(current.base, current.tone)
+      $('pp-meaning').textContent = current.meaning
+      $('pp-contour').textContent = `Tone ${current.tone}: ${TONE_ARROWS[current.tone]}`
+      $('pp-contour').className = `pp-tone-contour pp-tone-${current.tone}`
+    } else {
+      $('pp-char').textContent = current.chars
+      $('pp-pinyin').textContent = `${applyTone(current.bases[0], current.tones[0])} ${applyTone(current.bases[1], current.tones[1])}`
+      $('pp-meaning').textContent = current.meaning
+      $('pp-contour').textContent = `Tones ${current.tones[0]}-${current.tones[1]}: ${TONE_ARROWS[current.tones[0]]} ${TONE_ARROWS[current.tones[1]]}`
+      $('pp-contour').className = `pp-tone-contour pp-tone-${current.tones[0]}`
+    }
     $('pp-listen').disabled = false
 
-    // Re-animate card
     const card = $('pp-card')
     card.style.animation = 'none'
     card.offsetHeight
@@ -231,10 +429,15 @@ export function practiceProView(container) {
     const btn = $('pp-listen')
     btn.textContent = '🔊 Playing...'
     btn.disabled = true
-    speakChinese(current.char, current.tone, () => {
+    const onDone = () => {
       btn.textContent = '🔊 Listen again'
       btn.disabled = false
-    })
+    }
+    if (tab === 'single') {
+      playSyllable(current.base, current.tone, onDone)
+    } else {
+      playDisyllable(current.bases[0], current.tones[0], current.bases[1], current.tones[1], onDone)
+    }
   }
 
   async function startRecording() {
@@ -254,7 +457,8 @@ export function practiceProView(container) {
     $('pp-record').classList.add('recording')
     $('pp-listen').disabled = true
 
-    // Level meter + silence detection
+    const isPair = tab === 'pairs'
+
     levelInterval = setInterval(() => {
       const rms = audioEngine.getRMS()
       const pct = Math.min(100, rms * 500)
@@ -266,13 +470,16 @@ export function practiceProView(container) {
         if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null }
         $('pp-rec-status').textContent = 'Speaking...'
       } else if (hasSpeaking && !silenceTimer) {
-        silenceTimer = setTimeout(() => { if (isRecording) stopRecording() }, 400)
+        // Pairs need a longer silence-after grace so the gap between syllables
+        // doesn't end the recording early.
+        const stopAfter = isPair ? 700 : 400
+        silenceTimer = setTimeout(() => { if (isRecording) stopRecording() }, stopAfter)
         $('pp-rec-status').textContent = 'Done? Stopping...'
       }
     }, 50)
 
-    // Safety max 3 seconds
-    recordTimer = setTimeout(() => { if (isRecording) stopRecording() }, 3000)
+    // Safety max: 4s for single, 6s for disyllabic
+    recordTimer = setTimeout(() => { if (isRecording) stopRecording() }, isPair ? 6000 : 4000)
   }
 
   async function stopRecording() {
@@ -290,59 +497,93 @@ export function practiceProView(container) {
     $('pp-record').disabled = true
     $('pp-level-bar').style.width = '0%'
 
-    // Run ensemble detection
-    const ensemble = await toneDetector.detect(
-      { samples: recording.samples, sampleRate: recording.sampleRate },
-      current.base,
-      { referenceChar: current.char }
-    )
+    let passed, detectedTone, ensemble1, ensemble2
+    let msg = ''
+    let extra = ''
 
-    const detectedTone = ensemble.tone
-    const passed = detectedTone === current.tone
+    if (tab === 'single') {
+      ensemble1 = await toneDetector.detect(
+        { samples: recording.samples, sampleRate: recording.sampleRate },
+        current.base,
+        { referenceChar: current.char }
+      )
+      detectedTone = ensemble1.tone
+      passed = detectedTone === current.tone
+      if (!detectedTone) {
+        msg = 'Could not detect a clear tone — try speaking louder'
+      } else if (passed) {
+        msg = pickPraise(ensemble1.confidence)
+      } else {
+        msg = 'Almost — give it another try.'
+      }
+      extra = ''
+    } else {
+      // Disyllabic: split the recording into two halves and detect each.
+      const { first, second } = splitDisyllableAudio(recording.samples, recording.sampleRate)
+      ;[ensemble1, ensemble2] = await Promise.all([
+        toneDetector.detect(
+          { samples: first, sampleRate: recording.sampleRate },
+          current.bases[0],
+          { referenceChar: current.chars[0] }
+        ),
+        toneDetector.detect(
+          { samples: second, sampleRate: recording.sampleRate },
+          current.bases[1],
+          { referenceChar: current.chars[1] }
+        ),
+      ])
+      const t1 = ensemble1.tone
+      const t2 = ensemble2.tone
+      const ok1 = t1 === current.tones[0]
+      const ok2 = t2 === current.tones[1]
+      passed = ok1 && ok2
+      detectedTone = t1
+      const part1 = `1st syllable: ${ok1 ? 'correct ✓' : 'incorrect ✗'}`
+      const part2 = `2nd syllable: ${ok2 ? 'correct ✓' : 'incorrect ✗'}`
+      msg = `${part1}  ·  ${part2}`
+      extra = ''
+    }
+
     attempts++
-    if (passed) correct++
+    if (passed) {
+      correct++
+      if (setMode) setCorrect++
+    }
 
-    $('pp-correct').textContent = correct
+    $('pp-correct').textContent = setMode ? setCorrect : correct
     $('pp-attempts').textContent = attempts
 
-    // Update record button state
     $('pp-rec-icon').textContent = passed ? '✓' : '✗'
     $('pp-rec-label').textContent = 'Done'
     $('pp-rec-status').textContent = passed ? 'Correct!' : 'Not quite'
 
-    // Build result display
-    const toneNames = { 1: '1st (High ‾)', 2: '2nd (Rising ↗)', 3: '3rd (Dip ↘↗)', 4: '4th (Falling ↘)' }
-
     $('pp-result-icon').textContent = passed ? '✓' : '✗'
     $('pp-result-icon').style.color = passed ? 'var(--correct)' : 'var(--incorrect)'
+    $('pp-result-msg').textContent = msg
+    $('pp-result-msg').style.color = passed ? 'var(--correct)' : 'var(--text-secondary)'
+    $('pp-result-detail').textContent = extra
 
-    if (!detectedTone) {
-      $('pp-result-msg').textContent = 'Could not detect a clear tone — try speaking louder'
-      $('pp-result-msg').style.color = 'var(--text-secondary)'
-    } else if (passed) {
-      $('pp-result-msg').textContent = `Detected: ${toneNames[detectedTone]}`
-      $('pp-result-msg').style.color = 'var(--correct)'
-    } else {
-      $('pp-result-msg').textContent = `Detected Tone ${detectedTone}, expected Tone ${current.tone}`
-      $('pp-result-msg').style.color = 'var(--incorrect)'
-    }
-
-    const confText = ensemble.tone ? `Confidence: ${ensemble.confidence}%` : ''
-    const agreeText = ensemble.agreement ? `Agreement: ${ensemble.agreement}%` : ''
-    $('pp-result-detail').textContent = [confText, agreeText].filter(Boolean).join('  ·  ')
-
-    // Show hint if wrong
+    // Show hint when wrong — describe how to pronounce it without naming the
+    // target tone number.
     const hintEl = $('pp-hint')
-    if (!passed && detectedTone) {
-      const wrongDesc = { 1: 'stayed flat/high', 2: 'went up', 3: 'dipped low', 4: 'fell sharply' }
-      hintEl.innerHTML = `
-        <strong>Hint:</strong> You said Tone ${detectedTone} (voice ${wrongDesc[detectedTone]}).<br>
-        For Tone ${current.tone}: ${TONE_HINTS[current.tone]}
-      `
-      hintEl.classList.remove('hidden')
-    } else if (!detectedTone) {
-      hintEl.innerHTML = `<strong>Tip:</strong> Speak clearly and a bit louder. Try holding the tone for about 1 second.`
-      hintEl.classList.remove('hidden')
+    if (!passed) {
+      if (tab === 'single' && detectedTone) {
+        hintEl.innerHTML = `<strong>Hint:</strong> ${TONE_HINTS[current.tone]}`
+        hintEl.classList.remove('hidden')
+      } else if (tab === 'pairs') {
+        const t1 = ensemble1?.tone, t2 = ensemble2?.tone
+        const want1 = current.tones[0], want2 = current.tones[1]
+        const lines = []
+        if (t1 !== want1) lines.push(`1st syllable: ${TONE_HINTS[want1]}`)
+        if (t2 !== want2) lines.push(`2nd syllable: ${TONE_HINTS[want2]}`)
+        hintEl.innerHTML = `<strong>Hint:</strong> ${lines.join('<br>')}`
+        hintEl.classList.remove('hidden')
+      } else if (!detectedTone) {
+        hintEl.innerHTML = `<strong>Tip:</strong> Speak clearly and a bit louder. Try holding the tone for about 1 second.`
+        hintEl.classList.remove('hidden')
+      } else {
+        hintEl.classList.add('hidden')
+      }
     } else {
       hintEl.classList.add('hidden')
     }
@@ -358,6 +599,7 @@ export function practiceProView(container) {
     if (isRecording) {
       audioEngine.stop()
     }
+    stopAllAudio()
   }
 }
 
@@ -381,6 +623,31 @@ const scopedCSS = `
     font-size: 0.85rem; padding: 6px 14px;
   }
 
+  /* Tabs */
+  .pp-tab-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .pp-tab-btn {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--card-border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .pp-tab-btn.active {
+    border-color: var(--accent);
+    background: rgba(56,189,248,0.1);
+    color: var(--accent);
+  }
+
   /* Stats bar */
   .pp-stats-bar {
     display: flex;
@@ -395,20 +662,72 @@ const scopedCSS = `
     font-weight: 700;
   }
 
+  /* Set-mode progress + end screen */
+  .pp-set-progress {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+  .pp-set-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+  }
+  .pp-set-row strong { color: var(--text-primary); font-weight: 600; }
+  .pp-set-bar-track {
+    height: 6px;
+    background: var(--surface);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .pp-set-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+  .pp-end { text-align: center; padding: 8px 4px; }
+  .pp-end-icon { font-size: 3rem; margin-bottom: 12px; }
+  .pp-end-title { font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; }
+  .pp-end-score {
+    font-size: 2.2rem; font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+  .pp-end-msg {
+    color: var(--text-secondary);
+    font-size: 0.92rem;
+    line-height: 1.5;
+    margin-bottom: 24px;
+  }
+  .pp-end-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .pp-end-actions .btn { flex: 1; min-width: 140px; }
+
   /* Character display */
   .pp-char-display {
     text-align: center;
     padding: 16px 0 20px;
   }
   .pp-big-char {
-    font-size: 4rem;
+    font-size: 3.4rem;
     font-weight: 700;
     color: var(--text-primary);
     line-height: 1.1;
     font-family: 'Noto Sans SC', sans-serif;
+    letter-spacing: 0.04em;
   }
   .pp-pinyin {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
     color: var(--accent);
     font-weight: 600;
     margin-top: 8px;

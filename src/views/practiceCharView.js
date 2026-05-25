@@ -267,19 +267,19 @@ const QUIZ_COUNT = 10
 const QUIZ_PASS = 8
 
 const TONE_CHOICES = [
-  { value: 5, label: 'Neutral (轻声)' },
-  { value: 1, label: '1st tone (一声)' },
-  { value: 2, label: '2nd tone (二声)' },
-  { value: 3, label: '3rd tone (三声)' },
-  { value: 4, label: '4th tone (四声)' },
+  { value: 5, label: 'Neutral · (轻声)' },
+  { value: 1, label: '1st tone ─ (一声)' },
+  { value: 2, label: '2nd tone ／ (二声)' },
+  { value: 3, label: '3rd tone ∨ (三声)' },
+  { value: 4, label: '4th tone ＼ (四声)' },
 ]
 
 const TONE_NAMES = {
-  1: '1st (High)',
-  2: '2nd (Rising)',
-  3: '3rd (Dip)',
-  4: '4th (Fall)',
-  5: 'Neutral',
+  1: '1st (High ─)',
+  2: '2nd (Rising ／)',
+  3: '3rd (Dip ∨)',
+  4: '4th (Fall ＼)',
+  5: 'Neutral ·',
 }
 
 const TONE_COLORS = {
@@ -306,6 +306,9 @@ function saveProgress(data) {
 // Main view
 // ═══════════════════════════════════════
 export function practiceCharView(container) {
+  sessionStorage.removeItem('j4t_practice_set')
+  sessionStorage.removeItem('j4t_practice_return')
+
   let state = 'select'   // select | study | quiz | review | results
   let activeBatch = -1
   let cards = []

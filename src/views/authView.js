@@ -136,7 +136,12 @@ export function authView(container) {
         if (error) throw error
         navigate('/')
       } else {
-        const { error } = await supabase.auth.signUp({ email, password: pass })
+        const redirectTo = window.location.origin + import.meta.env.BASE_URL
+        const { error } = await supabase.auth.signUp({
+          email,
+          password: pass,
+          options: { emailRedirectTo: redirectTo },
+        })
         if (error) throw error
         showMessage('Account created! Check your email to confirm, then log in.', false)
         isLogin = true
@@ -158,7 +163,8 @@ export function authView(container) {
 
     setLoading(true)
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email)
+      const redirectTo = window.location.origin + import.meta.env.BASE_URL
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
       if (error) throw error
       showMessage('Password reset link sent! Check your email.', false)
       setLoading(false)

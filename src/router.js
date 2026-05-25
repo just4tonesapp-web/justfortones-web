@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════
 // Simple hash-based SPA router
 // ═══════════════════════════════════════
+import { stopAllAudio } from './utils/audio.js'
 
 const routes = {}
 let currentCleanup = null
@@ -26,6 +27,9 @@ export function startRouter() {
     const hash = window.location.hash.replace('#', '') || '/'
     const handler = routes[hash] || routes['/']
     const app = document.getElementById('app')
+
+    // Always stop any in-flight audio when changing views
+    stopAllAudio()
 
     // run previous cleanup
     if (typeof currentCleanup === 'function') currentCleanup()

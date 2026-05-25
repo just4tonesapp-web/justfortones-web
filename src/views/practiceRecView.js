@@ -1,11 +1,14 @@
 // ═══════════════════════════════════════
 // Interface II – Tone Recognition Practice
+// Two tabs: Single Syllables, Disyllabic Words
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
-import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle } from '../utils/pinyin.js'
-import { speakChinese } from '../utils/audio.js'
+import { SYLLABLE_POOL, applyTone, shuffle, hasCharacter } from '../utils/pinyin.js'
+import { playSyllable, playDisyllable, stopAllAudio } from '../utils/audio.js'
+import { hasRecording } from '../utils/recordingsManifest.js'
+import { DISYLLABLE_BY_PAIR } from '../utils/disyllableManifest.js'
 
-// Simpler syllable subset for focused practice
+// Single-syllable subset for focused practice
 const SYLLABLES = [
   'ba','ma','da','ta','na','la','ga','ka','ha','zha','cha','sha','fa','pa',
   'bo','mo','fo','de','ge','he','ke','le','se',
@@ -13,24 +16,136 @@ const SYLLABLES = [
   'du','tu','nu','lu','gu','ku','hu','zhu','chu','shu','fu','bu','pu','mu',
 ]
 
+const SET_SIZE = 12
+const PER_TONE = 3
+
+// All 15 disyllabic tone-pair combos — 3+3 omitted (tone-3 sandhi makes the
+// natural pronunciation 2+3, which mismatches the written tones).
+const ALL_PAIRS = []
+for (let a = 1; a <= 4; a++) {
+  for (let b = 1; b <= 4; b++) {
+    if (a === 3 && b === 3) continue
+    ALL_PAIRS.push([a, b])
+  }
+}
+
 export function practiceRecView(container) {
+  // ── Mode ──
+  // Set mode: invoked from a failed test — fixed 12-item set with end screen.
+  // Infinite mode: home-page entry — endless drilling.
+  const setMode = sessionStorage.getItem('j4t_practice_set') === '1'
+  const returnRoute = sessionStorage.getItem('j4t_practice_return') || '/'
+
+  // Tab: 'single' (after Test A) or 'pairs' (after Test B). In infinite mode
+  // we let the user toggle; in set mode we lock to the matching tab.
+  let tab = 'single'
+  if (setMode) {
+    tab = returnRoute === '/test-b' ? 'pairs' : 'single'
+  }
+
   // ── State ──
   let streak = 0
   let bestStreak = 0
   let total = 0
-  let currentSyllable = ''
-  let currentTone = 0
   let answered = false
   let autoAdvanceTimer = null
 
-  // ── Pick next question ──
+  // Single-syllable question state
+  let currentSyllable = ''
+  let currentTone = 0
+
+  // Disyllabic question state
+  let currentPair = null  // { syl1, tone1, syl2, tone2 }
+
+  // Set-mode state (per tab — rebuilt when tab switches)
+  let setQueue = []
+  let setIndex = 0
+  let setCorrect = 0
+
+  // ── Build a balanced 12-item set ──
+  function buildSingleSet() {
+    const items = []
+    for (let t = 1; t <= 4; t++) {
+      const candidates = SYLLABLES.filter(s => hasCharacter(s, t) && hasRecording(s, t))
+      const picks = shuffle(candidates).slice(0, PER_TONE)
+      for (const s of picks) items.push({ kind: 'single', syllable: s, tone: t })
+    }
+    return shuffle(items)
+  }
+
+  function buildPairSet() {
+    // Pick 12 of the 16 tone-pair combos at random; for each one, pick a
+    // random recorded combo from that pair's pool.
+    const pairs = shuffle(ALL_PAIRS).slice(0, SET_SIZE)
+    const items = []
+    for (const [t1, t2] of pairs) {
+      const pool = DISYLLABLE_BY_PAIR[`${t1}${t2}`] || []
+      if (!pool.length) continue
+      const hit = pool[Math.floor(Math.random() * pool.length)]
+      items.push({ kind: 'pairs', syl1: hit.syl1, tone1: t1, syl2: hit.syl2, tone2: t2 })
+    }
+    // Top up if any pair had no recordings (shouldn't happen but be safe)
+    while (items.length < SET_SIZE) {
+      const [t1, t2] = ALL_PAIRS[Math.floor(Math.random() * ALL_PAIRS.length)]
+      const pool = DISYLLABLE_BY_PAIR[`${t1}${t2}`] || []
+      if (!pool.length) break
+      const hit = pool[Math.floor(Math.random() * pool.length)]
+      items.push({ kind: 'pairs', syl1: hit.syl1, tone1: t1, syl2: hit.syl2, tone2: t2 })
+    }
+    return items
+  }
+
+  // ── Pick next question (infinite mode) ──
+  function nextQuestionInfinite() {
+    if (tab === 'single') {
+      // Pick a syllable+tone combo that has a real recording.
+      let attempts = 0
+      while (attempts < 30) {
+        const syl = SYLLABLES[Math.floor(Math.random() * SYLLABLES.length)]
+        const t = Math.floor(Math.random() * 4) + 1
+        if (hasRecording(syl, t) && hasCharacter(syl, t)) {
+          currentSyllable = syl
+          currentTone = t
+          return
+        }
+        attempts++
+      }
+      // fallback
+      currentSyllable = SYLLABLES[0]
+      currentTone = 1
+    } else {
+      const [t1, t2] = ALL_PAIRS[Math.floor(Math.random() * ALL_PAIRS.length)]
+      const pool = DISYLLABLE_BY_PAIR[`${t1}${t2}`] || []
+      if (pool.length) {
+        const hit = pool[Math.floor(Math.random() * pool.length)]
+        currentPair = { syl1: hit.syl1, tone1: t1, syl2: hit.syl2, tone2: t2 }
+      }
+    }
+  }
+
   function nextQuestion() {
-    currentSyllable = SYLLABLES[Math.floor(Math.random() * SYLLABLES.length)]
-    currentTone = Math.floor(Math.random() * 4) + 1
+    if (setMode) {
+      const q = setQueue[setIndex]
+      if (q.kind === 'single') {
+        currentSyllable = q.syllable
+        currentTone = q.tone
+        currentPair = null
+      } else {
+        currentPair = { syl1: q.syl1, tone1: q.tone1, syl2: q.syl2, tone2: q.tone2 }
+      }
+    } else {
+      nextQuestionInfinite()
+    }
     answered = false
   }
 
   // ── Mount ──
+  function startSet() {
+    setQueue = (tab === 'single') ? buildSingleSet() : buildPairSet()
+    setIndex = 0
+    setCorrect = 0
+  }
+  if (setMode) startSet()
   nextQuestion()
 
   container.innerHTML = `
@@ -47,15 +162,24 @@ export function practiceRecView(container) {
         </div>
       </div>
 
-      <!-- Mode toggle -->
-      <div class="pr-mode-bar">
-        <button class="pr-mode-btn active" id="pr-mode-single">Single Syllable</button>
-        <button class="pr-mode-btn" id="pr-mode-pairs" disabled>
-          Minimal Pairs
-          <span class="pr-coming-soon">Coming soon</span>
-        </button>
+      <!-- Tabs -->
+      <div class="pr-tab-bar">
+        <button class="pr-tab-btn ${tab === 'single' ? 'active' : ''}" id="pr-tab-single">Single Syllables</button>
+        <button class="pr-tab-btn ${tab === 'pairs' ? 'active' : ''}" id="pr-tab-pairs">Disyllabic Words</button>
       </div>
 
+      ${setMode ? `
+      <!-- Set progress -->
+      <div class="pr-stats card">
+        <div class="pr-set-progress">
+          <span class="pr-set-label">Question <span id="pr-set-num">1</span> of ${SET_SIZE}</span>
+          <span class="pr-set-score">Correct: <span id="pr-set-correct">0</span></span>
+        </div>
+        <div class="pr-set-bar-track">
+          <div class="pr-set-bar-fill" id="pr-set-bar" style="width:0%"></div>
+        </div>
+      </div>
+      ` : `
       <!-- Stats bar -->
       <div class="pr-stats card" id="pr-stats">
         <div class="pr-stat">
@@ -73,15 +197,16 @@ export function practiceRecView(container) {
           <span class="pr-stat-value" id="pr-total">0</span>
         </div>
       </div>
+      `}
 
       <!-- Main card -->
       <div class="card animate-in" id="pr-card">
-        <div class="question-label">Listen and identify the tone</div>
+        <div class="question-label" id="pr-qlabel">Listen and identify the tone</div>
         <div class="audio-area">
           <button class="play-btn" id="pr-play"><div class="play-icon"></div></button>
           <div class="play-hint" id="pr-hint">Tap to listen</div>
         </div>
-        <div class="choices" id="pr-choices"></div>
+        <div class="choices ${tab === 'pairs' ? 'pr-choices-col' : ''}" id="pr-choices"></div>
       </div>
 
       <!-- Correct answer reveal (shown after incorrect) -->
@@ -97,43 +222,114 @@ export function practiceRecView(container) {
 
   // ── Bind ──
   const $ = (id) => document.getElementById(id)
-  $('pr-back').addEventListener('click', () => navigate('/'))
-  $('pr-play').addEventListener('click', playCurrent)
-  $('pr-mode-pairs').addEventListener('click', (e) => {
-    e.preventDefault()
+  $('pr-back').addEventListener('click', () => {
+    stopAllAudio()
+    clearSetMode()
+    navigate(setMode ? returnRoute : '/')
   })
+  $('pr-play').addEventListener('click', playCurrent)
+
+  $('pr-tab-single').addEventListener('click', () => switchTab('single'))
+  $('pr-tab-pairs').addEventListener('click', () => switchTab('pairs'))
+
+  function switchTab(next) {
+    if (next === tab) return
+    tab = next
+    document.getElementById('pr-tab-single').classList.toggle('active', tab === 'single')
+    document.getElementById('pr-tab-pairs').classList.toggle('active', tab === 'pairs')
+    // Update layout for choices
+    $('pr-choices').classList.toggle('pr-choices-col', tab === 'pairs')
+    if (setMode) startSet()
+    // Reset streaks for clean infinite-mode UX too
+    if (!setMode) { streak = 0; total = 0 }
+    setCorrect = 0
+    nextQuestion()
+    renderChoices()
+    updateStats()
+    $('pr-hint').textContent = 'Tap to listen'
+    $('pr-play').classList.remove('playing')
+    $('pr-reveal').classList.add('hidden')
+    $('pr-reveal').innerHTML = ''
+  }
+
+  function clearSetMode() {
+    sessionStorage.removeItem('j4t_practice_set')
+    sessionStorage.removeItem('j4t_practice_return')
+  }
 
   // ── Render choices ──
   function renderChoices() {
-    const order = shuffle([1, 2, 3, 4])
-    const letters = ['A', 'B', 'C', 'D']
-    const toneNames = ['', '1st tone — high', '2nd tone — rising', '3rd tone — dip', '4th tone — falling']
     const el = $('pr-choices')
     el.innerHTML = ''
+    const letters = ['A', 'B', 'C', 'D']
 
-    order.forEach((t, idx) => {
-      const btn = document.createElement('button')
-      btn.className = 'choice-btn'
-      btn.dataset.tone = t
-      btn.innerHTML = `
-        <span class="choice-letter">${letters[idx]}</span>
-        <span class="choice-pinyin">${applyTone(currentSyllable, t)}</span>
-        <span class="choice-tone">${toneNames[t]}</span>
-      `
-      btn.addEventListener('click', () => pick(t, btn))
-      el.appendChild(btn)
-    })
+    if (tab === 'single') {
+      $('pr-qlabel').textContent = 'Listen and identify the tone'
+      const order = shuffle([1, 2, 3, 4])
+      const toneNames = ['', '1st tone — high ─', '2nd tone — rising ／', '3rd tone — dip ∨', '4th tone — falling ＼']
+      order.forEach((t, idx) => {
+        const btn = document.createElement('button')
+        btn.className = 'choice-btn'
+        btn.dataset.tone = t
+        btn.innerHTML = `
+          <span class="choice-letter">${letters[idx]}</span>
+          <span class="choice-pinyin">${applyTone(currentSyllable, t)}</span>
+          <span class="choice-tone">${toneNames[t]}</span>
+        `
+        btn.addEventListener('click', () => pickSingle(t, btn))
+        el.appendChild(btn)
+      })
+    } else {
+      $('pr-qlabel').textContent = 'Listen and identify both tones'
+      // Build 4 choices: correct pair + 3 distractor tone-pair combos
+      const correct = { t1: currentPair.tone1, t2: currentPair.tone2 }
+      const distractors = []
+      const usedKeys = new Set([`${correct.t1}${correct.t2}`, '33'])
+      while (distractors.length < 3) {
+        const a = Math.floor(Math.random() * 4) + 1
+        const b = Math.floor(Math.random() * 4) + 1
+        const key = `${a}${b}`
+        if (usedKeys.has(key)) continue
+        usedKeys.add(key)
+        distractors.push({ t1: a, t2: b })
+      }
+      const choices = shuffle([correct, ...distractors])
+      choices.forEach((c, idx) => {
+        const btn = document.createElement('button')
+        btn.className = 'choice-btn'
+        btn.dataset.t1 = c.t1
+        btn.dataset.t2 = c.t2
+        const pinyin = applyTone(currentPair.syl1, c.t1) + applyTone(currentPair.syl2, c.t2)
+        btn.innerHTML = `
+          <span class="choice-letter">${letters[idx]}</span>
+          <span class="choice-pinyin">${pinyin}</span>
+        `
+        btn.addEventListener('click', () => pickPair(c, btn))
+        el.appendChild(btn)
+      })
+    }
   }
 
   function updateStats() {
-    $('pr-streak').textContent = streak
-    $('pr-best').textContent = bestStreak
-    $('pr-total').textContent = total
+    if (setMode) {
+      $('pr-set-num').textContent = setIndex + 1
+      $('pr-set-correct').textContent = setCorrect
+      $('pr-set-bar').style.width = `${(setIndex / SET_SIZE) * 100}%`
+    } else {
+      $('pr-streak').textContent = streak
+      $('pr-best').textContent = bestStreak
+      $('pr-total').textContent = total
+    }
   }
 
-  // ── Load a question ──
+  // ── Load a question (or end the set) ──
   function loadQuestion() {
     if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null }
+    stopAllAudio()
+    if (setMode && setIndex >= SET_SIZE) {
+      showSetEnd()
+      return
+    }
     nextQuestion()
     renderChoices()
     updateStats()
@@ -142,11 +338,52 @@ export function practiceRecView(container) {
     $('pr-reveal').classList.add('hidden')
     $('pr-reveal').innerHTML = ''
 
-    // Re-animate card
     const card = $('pr-card')
     card.style.animation = 'none'
     card.offsetHeight
     card.style.animation = 'cardIn 0.4s ease-out'
+  }
+
+  function showSetEnd() {
+    const card = $('pr-card')
+    card.innerHTML = `
+      <div class="pr-end">
+        <div class="pr-end-icon">${setCorrect >= 9 ? '🎉' : setCorrect >= 6 ? '👍' : '💪'}</div>
+        <h2 class="pr-end-title">Set complete!</h2>
+        <div class="pr-end-score">${setCorrect}/${SET_SIZE}</div>
+        <p class="pr-end-msg">${setCorrect >= 9
+          ? 'Great work! Your ear is sharpening.'
+          : setCorrect >= 6
+            ? 'Solid effort — a bit more practice and you\'ll be ready.'
+            : 'Keep going — every set helps your ear lock in the tones.'}</p>
+        <div class="pr-end-actions">
+          <button class="btn btn-secondary" id="pr-end-more">More Practice</button>
+          <button class="btn btn-primary" id="pr-end-test">I'm ready for the test again</button>
+        </div>
+      </div>
+    `
+    $('pr-set-bar').style.width = '100%'
+    $('pr-set-num').textContent = SET_SIZE
+    $('pr-reveal').classList.add('hidden')
+    document.getElementById('pr-end-more').addEventListener('click', () => {
+      startSet()
+      // Restore the original card markup
+      card.innerHTML = `
+        <div class="question-label" id="pr-qlabel">${tab === 'pairs' ? 'Listen and identify both tones' : 'Listen and identify the tone'}</div>
+        <div class="audio-area">
+          <button class="play-btn" id="pr-play"><div class="play-icon"></div></button>
+          <div class="play-hint" id="pr-hint">Tap to listen</div>
+        </div>
+        <div class="choices ${tab === 'pairs' ? 'pr-choices-col' : ''}" id="pr-choices"></div>
+      `
+      $('pr-play').addEventListener('click', playCurrent)
+      loadQuestion()
+    })
+    document.getElementById('pr-end-test').addEventListener('click', () => {
+      stopAllAudio()
+      clearSetMode()
+      navigate(returnRoute)
+    })
   }
 
   // ── Play current sound ──
@@ -154,15 +391,21 @@ export function practiceRecView(container) {
     const btn = $('pr-play')
     btn.classList.add('playing')
     $('pr-hint').textContent = 'Listening...'
-    const char = getTTSChar(currentSyllable, currentTone)
-    speakChinese(char || applyTone(currentSyllable, currentTone), currentTone, () => {
+    const onDone = () => {
       btn.classList.remove('playing')
       $('pr-hint').textContent = 'Tap to replay'
-    })
+    }
+    if (tab === 'single') {
+      playSyllable(currentSyllable, currentTone, onDone)
+    } else if (currentPair) {
+      playDisyllable(currentPair.syl1, currentPair.tone1, currentPair.syl2, currentPair.tone2, onDone)
+    } else {
+      onDone()
+    }
   }
 
-  // ── Handle answer ──
-  function pick(selected, btnEl) {
+  // ── Handle answer (single syllable) ──
+  function pickSingle(selected, btnEl) {
     if (answered) return
     answered = true
     total++
@@ -172,13 +415,14 @@ export function practiceRecView(container) {
     if (ok) {
       streak++
       if (streak > bestStreak) bestStreak = streak
+      if (setMode) setCorrect++
     } else {
       streak = 0
     }
+    if (setMode) setIndex++
 
     updateStats()
 
-    // Highlight buttons
     document.querySelectorAll('#pr-choices .choice-btn').forEach(b => {
       const t = parseInt(b.dataset.tone)
       if (t === currentTone) b.classList.add('correct')
@@ -189,12 +433,10 @@ export function practiceRecView(container) {
     showToast(ok)
 
     if (ok) {
-      // Correct — auto-advance after 1s
       autoAdvanceTimer = setTimeout(loadQuestion, 1000)
     } else {
-      // Incorrect — show correct answer, wait 2s, then play correct sound
       const correctPinyin = applyTone(currentSyllable, currentTone)
-      const toneNames = ['', '1st tone (high)', '2nd tone (rising)', '3rd tone (dip)', '4th tone (falling)']
+      const toneNames = ['', '1st tone (high ─)', '2nd tone (rising ／)', '3rd tone (dip ∨)', '4th tone (falling ＼)']
       const revealEl = $('pr-reveal')
       revealEl.classList.remove('hidden')
       revealEl.innerHTML = `
@@ -205,12 +447,64 @@ export function practiceRecView(container) {
         </div>
       `
 
-      // After 2s, play the correct sound then advance
       const syllable = currentSyllable
       const tone = currentTone
       autoAdvanceTimer = setTimeout(() => {
-        const char = getTTSChar(syllable, tone)
-        speakChinese(char || applyTone(syllable, tone), tone, () => {
+        playSyllable(syllable, tone, () => {
+          autoAdvanceTimer = setTimeout(loadQuestion, 1200)
+        })
+      }, 2000)
+    }
+  }
+
+  // ── Handle answer (disyllabic) ──
+  function pickPair(selected, btnEl) {
+    if (answered) return
+    answered = true
+    total++
+
+    const ok = selected.t1 === currentPair.tone1 && selected.t2 === currentPair.tone2
+
+    if (ok) {
+      streak++
+      if (streak > bestStreak) bestStreak = streak
+      if (setMode) setCorrect++
+    } else {
+      streak = 0
+    }
+    if (setMode) setIndex++
+
+    updateStats()
+
+    document.querySelectorAll('#pr-choices .choice-btn').forEach(b => {
+      const bt1 = parseInt(b.dataset.t1)
+      const bt2 = parseInt(b.dataset.t2)
+      const isCorrect = bt1 === currentPair.tone1 && bt2 === currentPair.tone2
+      const isSelected = bt1 === selected.t1 && bt2 === selected.t2
+      if (isCorrect) b.classList.add('correct')
+      else if (isSelected && !ok) b.classList.add('incorrect')
+      b.classList.add('disabled')
+    })
+
+    showToast(ok)
+
+    if (ok) {
+      autoAdvanceTimer = setTimeout(loadQuestion, 1000)
+    } else {
+      const correctPinyin = applyTone(currentPair.syl1, currentPair.tone1) + applyTone(currentPair.syl2, currentPair.tone2)
+      const revealEl = $('pr-reveal')
+      revealEl.classList.remove('hidden')
+      revealEl.innerHTML = `
+        <div class="pr-reveal-inner">
+          <span class="pr-reveal-label">Correct answer:</span>
+          <span class="pr-reveal-pinyin">${correctPinyin}</span>
+          <span class="pr-reveal-tone">tones ${currentPair.tone1}-${currentPair.tone2}</span>
+        </div>
+      `
+
+      const pair = currentPair
+      autoAdvanceTimer = setTimeout(() => {
+        playDisyllable(pair.syl1, pair.tone1, pair.syl2, pair.tone2, () => {
           autoAdvanceTimer = setTimeout(loadQuestion, 1200)
         })
       }, 2000)
@@ -236,6 +530,7 @@ export function practiceRecView(container) {
   // ── Cleanup ──
   return () => {
     if (autoAdvanceTimer) clearTimeout(autoAdvanceTimer)
+    stopAllAudio()
   }
 }
 
@@ -283,42 +578,81 @@ const scopedCSS = `
     margin: 0;
   }
 
-  /* Mode toggle bar */
-  .pr-mode-bar {
+  /* Tabs */
+  .pr-tab-bar {
     display: flex;
     gap: 8px;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
   }
-  .pr-mode-btn {
+  .pr-tab-btn {
     flex: 1;
     padding: 10px 12px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--card-border);
     background: var(--surface);
     color: var(--text-secondary);
-    font-size: 0.82rem;
+    font-size: 0.85rem;
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
     transition: all 0.2s ease;
-    position: relative;
   }
-  .pr-mode-btn.active {
+  .pr-tab-btn.active {
     border-color: var(--accent);
     background: rgba(56,189,248,0.1);
     color: var(--accent);
   }
-  .pr-mode-btn:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
+
+  /* Set-mode progress */
+  .pr-set-progress {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
   }
-  .pr-coming-soon {
-    display: block;
-    font-size: 0.65rem;
-    font-weight: 400;
-    color: var(--text-muted);
-    margin-top: 2px;
+  .pr-set-score { font-weight: 600; color: var(--text-primary); }
+  .pr-set-bar-track {
+    height: 6px;
+    background: var(--surface);
+    border-radius: 3px;
+    overflow: hidden;
   }
+  .pr-set-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+
+  /* End-of-set screen */
+  .pr-end { text-align: center; padding: 8px 4px; }
+  .pr-end-icon { font-size: 3rem; margin-bottom: 12px; }
+  .pr-end-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .pr-end-score {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+  .pr-end-msg {
+    color: var(--text-secondary);
+    font-size: 0.92rem;
+    line-height: 1.5;
+    margin-bottom: 24px;
+  }
+  .pr-end-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .pr-end-actions .btn { flex: 1; min-width: 140px; }
 
   /* Stats bar */
   .pr-stats {
@@ -355,7 +689,7 @@ const scopedCSS = `
     background: var(--card-border);
   }
 
-  /* Question card inner — reuse Test A patterns */
+  /* Question card */
   .question-label {
     text-align: center; font-size: 0.85rem;
     color: var(--text-muted); margin-bottom: 20px;
@@ -395,9 +729,14 @@ const scopedCSS = `
     margin-top: 12px; font-size: 0.82rem; color: var(--text-muted);
   }
 
-  /* Choices — 2x2 grid */
+  /* Choices — single mode: 2x2 grid; pairs mode: single column */
   .choices {
     display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .choices.pr-choices-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
   .choice-btn {
     background: var(--surface);
@@ -406,6 +745,18 @@ const scopedCSS = `
     padding: 16px 12px; cursor: pointer;
     text-align: center; transition: all 0.2s ease;
     font-family: inherit; color: var(--text-primary);
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pr-choices-col .choice-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    text-align: left;
+  }
+  .choice-btn:focus-visible {
+    box-shadow: 0 0 0 2px var(--accent);
   }
   .choice-btn:hover:not(.disabled) {
     border-color: var(--accent);
@@ -417,7 +768,14 @@ const scopedCSS = `
     color: var(--text-muted); margin-bottom: 4px;
     text-transform: uppercase; letter-spacing: 0.08em;
   }
+  .pr-choices-col .choice-letter {
+    display: inline-block;
+    margin-bottom: 0;
+    flex-shrink: 0;
+    width: 24px;
+  }
   .choice-pinyin { font-size: 1.35rem; font-weight: 600; }
+  .pr-choices-col .choice-pinyin { font-size: 1.2rem; }
   .choice-tone { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; display: block; }
   .choice-btn.correct {
     border-color: var(--correct);
@@ -466,7 +824,7 @@ const scopedCSS = `
     margin-left: auto;
   }
 
-  /* Feedback toast — reuse existing pattern */
+  /* Feedback toast */
   .feedback-toast {
     position: fixed;
     bottom: 40px;

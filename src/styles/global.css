@@ -73,6 +73,32 @@ body::before {
   padding: 24px 16px 48px;
 }
 
+/* ── Top "back to home" row, used inside test/practice app-shells ── */
+.back-row {
+  display: flex;
+  margin-bottom: 12px;
+}
+.back-home-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--card-border);
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.back-home-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ── Shared components ── */
 .badge {
   display: inline-block;

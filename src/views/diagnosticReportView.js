@@ -18,7 +18,7 @@ export async function diagnosticReportView(container) {
     return matching.reduce((a, b) => (a.score > b.score ? a : b))
   }
 
-  const tests = ['A', 'B', 'C', 'D', 'X', 'Y', 'Z']
+  const tests = ['A', 'B', 'C', 'D', 'X']
   const testData = {}
   for (const t of tests) testData[t] = best(t)
 
@@ -33,9 +33,7 @@ export async function diagnosticReportView(container) {
   if (testData.B && !testData.B.passed) weakAreas.push('two-syllable tone pair recognition')
   if (testData.C && !testData.C.passed) weakAreas.push('single character tone production')
   if (testData.D && !testData.D.passed) weakAreas.push('two-character tone production')
-  if (testData.X && !testData.X.passed) weakAreas.push('character tone knowledge (round 1)')
-  if (testData.Y && !testData.Y.passed) weakAreas.push('character tone knowledge (round 2)')
-  if (testData.Z && !testData.Z.passed) weakAreas.push('character tone knowledge (round 3)')
+  if (testData.X && !testData.X.passed) weakAreas.push('top 50 character tone knowledge')
 
   // Build test rows
   let testRows = ''
@@ -44,9 +42,7 @@ export async function diagnosticReportView(container) {
     B: 'Test B — Two-Syllable Listening',
     C: 'Test C — Single Char Pronunciation',
     D: 'Test D — Two-Char Pronunciation',
-    X: 'Test X — Character Tones (Round 1)',
-    Y: 'Test Y — Character Tones (Round 2)',
-    Z: 'Test Z — Character Tones (Round 3)',
+    X: 'Test X — Top 50 Character Tones',
   }
 
   for (const t of tests) {

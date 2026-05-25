@@ -8,7 +8,7 @@ import { hasRecording } from '../utils/recordingsManifest.js'
 import { saveResult } from '../services/progressService.js'
 
 const TOTAL = 12
-const PASS_SCORE = 10
+const PASS_SCORE = 7
 
 export function testAView(container) {
   // ── State ──
@@ -20,6 +20,9 @@ export function testAView(container) {
   let qStart = 0
   let testStart = 0
 
+  // Items used in the previous attempt — excluded on retake so users get fresh items.
+  let previousItems = new Set()
+
   // ── Generate 12 questions (3 per tone, random syllables) ──
   // Only pick syllables that have a recorded m4a for the chosen tone,
   // so every question plays a real human voice.
@@ -27,17 +30,23 @@ export function testAView(container) {
     const tones = shuffle([1,1,1, 2,2,2, 3,3,3, 4,4,4])
     const used = new Set()
     questions = tones.map((t) => {
-      const candidates = SYLLABLE_POOL.filter(s => !used.has(s) && hasRecording(s, t) && hasCharacter(s, t))
-      const pool = candidates.length ? candidates : SYLLABLE_POOL.filter(s => !used.has(s))
+      const fresh = SYLLABLE_POOL.filter(s =>
+        !used.has(s) && !previousItems.has(`${s}${t}`) && hasRecording(s, t) && hasCharacter(s, t))
+      const cand = SYLLABLE_POOL.filter(s => !used.has(s) && hasRecording(s, t) && hasCharacter(s, t))
+      const pool = fresh.length ? fresh : (cand.length ? cand : SYLLABLE_POOL.filter(s => !used.has(s)))
       const syllable = pool[Math.floor(Math.random() * pool.length)]
       used.add(syllable)
       return { syllable, tone: t }
     })
+    previousItems = new Set(questions.map(q => `${q.syllable}${q.tone}`))
   }
 
   // ── Mount ──
   container.innerHTML = `
     <div class="app-shell">
+      <div class="back-row">
+        <button class="back-home-btn" id="ta-home">← Home</button>
+      </div>
       <div class="testa-header">
         <span class="badge">Diagnostic Step 1</span>
         <h1>Test A — Tone Listening</h1>
@@ -96,6 +105,7 @@ export function testAView(container) {
 
   // ── Bind ──
   const $ = (id) => document.getElementById(id)
+  $('ta-home').addEventListener('click', () => navigate('/'))
   $('ta-start').addEventListener('click', startTest)
   $('ta-play').addEventListener('click', playCurrent)
 
@@ -123,7 +133,7 @@ export function testAView(container) {
     // Build 4 choices in shuffled order
     const order = shuffle([1, 2, 3, 4])
     const letters = ['A', 'B', 'C', 'D']
-    const toneNames = ['', '1st tone', '2nd tone', '3rd tone', '4th tone']
+    const toneNames = ['', '1st tone ─', '2nd tone ／', '3rd tone ∨', '4th tone ＼']
     const el = $('ta-choices')
     el.innerHTML = ''
 
@@ -219,7 +229,7 @@ export function testAView(container) {
 
     // Tone stats
     const toneColors = { 1:'var(--tone1)', 2:'var(--tone2)', 3:'var(--tone3)', 4:'var(--tone4)' }
-    const toneNames = { 1:'1st (High)', 2:'2nd (Rising)', 3:'3rd (Dip)', 4:'4th (Fall)' }
+    const toneNames = { 1:'1st (High ─)', 2:'2nd (Rising ／)', 3:'3rd (Dip ∨)', 4:'4th (Fall ＼)' }
     let toneRows = ''
     for (let t = 1; t <= 4; t++) {
       const qs = answers.filter(a => a.tone === t)
@@ -252,8 +262,8 @@ export function testAView(container) {
     })
 
     const verdict = passed
-      ? `🎉 Excellent! You scored <strong>${score}/${TOTAL}</strong>. You can identify and distinguish the four tones competently! Now let's see if you can pronounce them like a native!`
-      : `You scored <strong>${score}/${TOTAL}</strong>. It seems you have some work to do with your ears! Let's practice tone recognition.`
+      ? `🎉 Great Job! Incredible! You nailed it! You scored <strong>${score}/${TOTAL}</strong>. Now let's see if you can identify tones of disyllabic Chinese words!`
+      : `You scored <strong>${score}/${TOTAL}</strong>. Fluctuation in performance when listening to foreign sounds is totally expected. Want to retake the test, or go straight to practice?`
 
     el.innerHTML = `
       <div class="app-shell animate-in">
@@ -277,10 +287,13 @@ export function testAView(container) {
         </div>
 
         <div class="report-actions">
-          <button class="btn btn-secondary" id="ta-retry">🔄 Retake</button>
-          <button class="btn btn-primary" id="ta-continue">
-            ${passed ? '→ Continue to Test C' : '→ Practice Tones'}
-          </button>
+          ${passed ? `
+            <button class="btn btn-secondary" id="ta-retry">🔄 Retake</button>
+            <button class="btn btn-primary" id="ta-continue">→ Continue to Test B</button>
+          ` : `
+            <button class="btn btn-primary" id="ta-retry">🔄 Retake the Test</button>
+            <button class="btn btn-primary" id="ta-continue">🎧 Single Syllable Practice</button>
+          `}
         </div>
       </div>
     `
@@ -288,8 +301,10 @@ export function testAView(container) {
     document.getElementById('ta-retry').addEventListener('click', startTest)
     document.getElementById('ta-continue').addEventListener('click', () => {
       if (passed) {
-        navigate('/test-c')
+        navigate('/test-b')
       } else {
+        sessionStorage.setItem('j4t_practice_set', '1')
+        sessionStorage.setItem('j4t_practice_return', '/test-a')
         navigate('/practice-recognition')
       }
     })

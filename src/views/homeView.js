@@ -20,15 +20,14 @@ export async function homeView(container) {
   container.innerHTML = `
     <div class="app-shell">
       <header class="home-header">
-        <div class="home-top-bar">
-          <h1 class="home-title">Just4Tones</h1>
-          <div class="home-top-actions">
-            <button class="top-btn" id="report-btn" title="View diagnostic report">📊</button>
-            <button class="logout-btn" id="logout-btn" title="${isGuest ? 'Exit guest mode' : 'Log out'}">
-              ${isGuest ? '👤 Guest' : '🚪 Log out'}
-            </button>
-          </div>
+        <div class="home-top-actions">
+          <button class="top-btn" id="report-btn" title="View diagnostic report">📊</button>
+          <button class="top-btn" id="history-btn" title="View test history">📋</button>
+          <button class="logout-btn" id="logout-btn" title="${isGuest ? 'Exit guest mode' : 'Log out'}">
+            ${isGuest ? '👤 Guest' : '🚪 Log out'}
+          </button>
         </div>
+        <h1 class="home-title">Just4Tones</h1>
         <p class="home-subtitle">Master the four tones of Mandarin Chinese</p>
       </header>
 
@@ -112,9 +111,18 @@ export async function homeView(container) {
           <button class="step-card" id="go-test-xyz">
             <div class="step-num">X</div>
             <div class="step-body">
-              <h3>Character Tone Knowledge ${check(state.passedX && state.passedY && state.passedZ)}</h3>
-              <p>Match tones to the most common characters</p>
-              <span class="step-tag">Tests X, Y, Z · 36 questions</span>
+              <h3>Top 50 Character Tones ${check(state.passedX)}</h3>
+              <p>Match tones to the 50 most-frequent characters</p>
+              <span class="step-tag">Test X · 50 questions</span>
+            </div>
+            <div class="step-arrow">→</div>
+          </button>
+          <button class="step-card" id="go-test-y">
+            <div class="step-num">Y</div>
+            <div class="step-body">
+              <h3>Top 500 Disyllabic Words ${check(state.passedY)}</h3>
+              <p>Tones of HSK 1–3 two-syllable words</p>
+              <span class="step-tag">Test Y · 10 rounds × 20 questions</span>
             </div>
             <div class="step-arrow">→</div>
           </button>
@@ -139,7 +147,9 @@ export async function homeView(container) {
   document.getElementById('go-test-c').addEventListener('click', () => navigate('/test-c'))
   document.getElementById('go-test-d').addEventListener('click', () => navigate('/test-d'))
   document.getElementById('go-test-xyz').addEventListener('click', () => navigate('/test-xyz'))
+  document.getElementById('go-test-y').addEventListener('click', () => navigate('/test-y'))
   document.getElementById('report-btn').addEventListener('click', () => navigate('/report'))
+  document.getElementById('history-btn').addEventListener('click', () => navigate('/history'))
   document.getElementById('go-practice-rec').addEventListener('click', () => navigate('/practice-recognition'))
   document.getElementById('go-practice-pro').addEventListener('click', () => navigate('/practice-production'))
   document.getElementById('go-practice-char').addEventListener('click', () => navigate('/practice-characters'))
@@ -160,11 +170,12 @@ export async function homeView(container) {
       text-align: center;
       margin-bottom: 28px;
     }
-    .home-top-bar {
+    .home-top-actions {
       display: flex;
+      justify-content: flex-end;
+      gap: 8px;
       align-items: center;
-      justify-content: center;
-      position: relative;
+      margin-bottom: 12px;
     }
     .home-title {
       font-size: 2.2rem;
@@ -173,13 +184,13 @@ export async function homeView(container) {
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
+      line-height: 1.1;
+      margin-bottom: 6px;
     }
-    .home-top-actions {
-      position: absolute;
-      right: 0;
-      display: flex;
-      gap: 8px;
-      align-items: center;
+    @media (max-width: 480px) {
+      .home-title { font-size: 1.9rem; }
+      .top-btn { padding: 5px 9px; font-size: 0.78rem; }
+      .logout-btn { padding: 5px 10px; font-size: 0.72rem; }
     }
     .top-btn {
       background: var(--surface);

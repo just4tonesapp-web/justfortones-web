@@ -1,0 +1,312 @@
+// ═══════════════════════════════════════════════════════════════════
+// toneReport.js — shared per-test report templates (slides 6–14)
+//
+// Two report shapes:
+//   • Single-syllable tests (A, C): per-tone correctness as 0 / 0.5 / 1
+//     based on N questions per tone. Three feedback bands.
+//   • Disyllabic tests (B, D):       per-tone "containing X" %
+//     across the tone-pair combos. Same three bands.
+//
+// Both return { html, analysis }. `analysis` carries the structured
+// per-tone numbers so the composite report (slide 21) can re-use them.
+//
+// "Recommended next tone" — when the worst band ties between multiple
+// tones, the natural Mandarin distribution order 4 → 1 → 2 → 3 picks
+// the winner (per the pptx note: "通过4，1，2,3 的自然分布顺序").
+// ═══════════════════════════════════════════════════════════════════
+
+const TONE_NAMES = {
+  1: '1st tone (─ high level)',
+  2: '2nd tone (／ rising)',
+  3: '3rd tone (∨ dip)',
+  4: '4th tone (＼ falling)',
+}
+const TONE_SHORT = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th' }
+const TONE_COLOR = { 1: 'var(--tone1)', 2: 'var(--tone2)', 3: 'var(--tone3)', 4: 'var(--tone4)' }
+// Natural distribution order — tiebreak for the worst band.
+const NATURAL_ORDER = [4, 1, 2, 3]
+
+// ── Per-tone characteristic snippets used in the recommendation paragraph ──
+const TONE_FEATURE = {
+  1: 'The 1st tone is high and flat — your voice stays level, like singing one held note.',
+  2: 'The 2nd tone rises from mid to high — like asking a question in English.',
+  3: 'The 3rd tone dips low then rises — the trickiest one for most learners.',
+  4: 'The 4th tone falls sharply from high to low — sounds firm, almost commanding.',
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Single-syllable analysis (Tests A & C)
+//   answers: [{ tone: 1..4, correct: bool }, ...]
+//   Each tone has N answers. score per tone = round((correct/N) * 2) / 2
+//   → maps {0..N} → {0, 0.5, 1} band score.
+//
+//   Band rule:    band 1.0 = "Bravo"
+//                 band 0.5 = "nascent"
+//                 band 0.0 = "work needed"
+// ═══════════════════════════════════════════════════════════════════
+export function analyzeSingleSyllable(answers) {
+  const perTone = {}
+  for (let t = 1; t <= 4; t++) {
+    const qs = answers.filter(a => a.tone === t)
+    const correct = qs.filter(a => a.correct).length
+    const total = qs.length || 1
+    const ratio = correct / total
+    // Three bands: 0, 0.5, 1 (mid-band when ratio is strictly between 0 and 1).
+    const band = ratio >= 1 ? 1 : ratio <= 0 ? 0 : 0.5
+    perTone[t] = { correct, total, ratio, band }
+  }
+  return summarize(perTone, 'syllable')
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Disyllabic analysis (Tests B & D)
+//   answers: [{ tones: [t1, t2], correct: bool }, ...]
+//   Each tone t's "containing %" = (correct count among answers where
+//   either syllable is t) / (total combos containing t).
+//   Three bands: 67–100, 34–66, 0–33.
+// ═══════════════════════════════════════════════════════════════════
+export function analyzeDisyllabic(answers) {
+  const perTone = {}
+  for (let t = 1; t <= 4; t++) {
+    const qs = answers.filter(a => a.tones && (a.tones[0] === t || a.tones[1] === t))
+    const correct = qs.filter(a => a.correct).length
+    const total = qs.length || 1
+    const ratio = correct / total
+    const pct = Math.round(ratio * 100)
+    // Three bands: 67–100 / 34–66 / 0–33 per slide 12.
+    const band = pct >= 67 ? 1 : pct >= 34 ? 0.5 : 0
+    perTone[t] = { correct, total, ratio, pct, band }
+  }
+  return summarize(perTone, 'word')
+}
+
+// ── Shared bucketing + recommendation logic ──
+function summarize(perTone, subject) {
+  const bravoTones = []
+  const nascentTones = []
+  const workTones = []
+  for (let t = 1; t <= 4; t++) {
+    if (perTone[t].band === 1) bravoTones.push(t)
+    else if (perTone[t].band === 0.5) nascentTones.push(t)
+    else workTones.push(t)
+  }
+
+  // Worst band → recommendation candidates. Tiebreak by natural order 4,1,2,3.
+  let pool
+  if (workTones.length) pool = workTones
+  else if (nascentTones.length) pool = nascentTones
+  else pool = [] // perfect score on this test
+
+  const recommendedTone = pool.length
+    ? NATURAL_ORDER.find(t => pool.includes(t)) || pool[0]
+    : null
+
+  return {
+    perTone,
+    bravoTones,
+    nascentTones,
+    workTones,
+    recommendedTone,
+    isPerfect: pool.length === 0,
+    subject, // 'syllable' or 'word'
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Build the report HTML
+//   shape:  'single' | 'disyl'
+// ═══════════════════════════════════════════════════════════════════
+export function buildReportHTML({ analysis, score, total, testLabel, shape }) {
+  const subject = shape === 'disyl' ? '2-syllable words containing the' : ''
+  const subjectShort = shape === 'disyl' ? 'words' : 'tones'
+
+  // Per-tone distribution rows.
+  let rows = ''
+  for (let t = 1; t <= 4; t++) {
+    const p = analysis.perTone[t]
+    const pct = shape === 'disyl' ? p.pct : Math.round(p.ratio * 100)
+    const numLabel = shape === 'disyl'
+      ? `${p.correct}/${p.total}`
+      : `${p.correct}/${p.total} → ${p.band}`
+    rows += `
+      <div class="tr-row">
+        <div class="tr-dot" style="background:${TONE_COLOR[t]}"></div>
+        <div class="tr-label">${TONE_NAMES[t]}</div>
+        <div class="tr-bar"><div class="tr-bar-fill" style="width:${pct}%;background:${TONE_COLOR[t]}"></div></div>
+        <div class="tr-pct" style="color:${TONE_COLOR[t]}">${pct}%</div>
+        <div class="tr-num">${numLabel}</div>
+      </div>`
+  }
+
+  // Feedback paragraphs.
+  let feedback = ''
+  if (analysis.isPerfect) {
+    feedback += `<p class="tr-line tr-bravo">You are really good at recognizing/speaking all four tones. Bravo!</p>`
+    feedback += `<p class="tr-line tr-bravo">Are you a native speaker? 👀</p>`
+  } else {
+    if (analysis.bravoTones.length) {
+      const names = analysis.bravoTones.map(t => TONE_SHORT[t]).join(', ')
+      feedback += `<p class="tr-line tr-bravo">✨ You are really good at ${shape === 'disyl' ? 'recognizing ' + subject + ' ' : 'the '}${names} tone${analysis.bravoTones.length > 1 ? 's' : ''}. Bravo!</p>`
+    }
+    if (analysis.nascentTones.length) {
+      const names = analysis.nascentTones.map(t => TONE_SHORT[t]).join(', ')
+      feedback += `<p class="tr-line tr-nascent">🌱 You demonstrate nascent ability with ${shape === 'disyl' ? subject + ' ' : 'the '}${names} tone${analysis.nascentTones.length > 1 ? 's' : ''}.</p>`
+    }
+    if (analysis.workTones.length) {
+      const names = analysis.workTones.map(t => TONE_SHORT[t]).join(', ')
+      feedback += `<p class="tr-line tr-work">💪 Some work is needed on your ${shape === 'disyl' ? subject + ' ' : ''}${names} tone${analysis.workTones.length > 1 ? 's' : ''}.</p>`
+    }
+  }
+
+  // Recommendation.
+  let recommendation = ''
+  if (analysis.recommendedTone) {
+    const rt = analysis.recommendedTone
+    recommendation = `
+      <div class="tr-reco">
+        <div class="tr-reco-head">🎯 Our recommendation</div>
+        <p>Focus on the <strong style="color:${TONE_COLOR[rt]}">${TONE_NAMES[rt]}</strong> first${shape === 'disyl' ? ' in 2-syllable words' : ''}, because of its natural distribution in Chinese. You will see huge gains immediately.</p>
+        <p class="tr-feature">${TONE_FEATURE[rt]}</p>
+      </div>`
+  }
+
+  const pct = Math.round((score / total) * 100)
+
+  const html = `
+    <div class="tr-card">
+      <div class="tr-summary">
+        <div class="tr-score-ring" style="--pct:${pct}">
+          <span class="tr-score-num">${score}/${total}</span>
+          <span class="tr-score-label">${pct}%</span>
+        </div>
+        <div class="tr-summary-text">
+          <div class="tr-test-label">${testLabel}</div>
+          <div class="tr-summary-sub">Correctness distribution by tone</div>
+        </div>
+      </div>
+
+      <div class="tr-rows">${rows}</div>
+
+      <div class="tr-feedback">${feedback}</div>
+
+      ${recommendation}
+    </div>
+  `
+
+  return { html, analysis }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scoped CSS — injected once per page by the caller.
+// ═══════════════════════════════════════════════════════════════════
+export const TONE_REPORT_CSS = `
+  .tr-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .tr-summary {
+    display: flex; align-items: center; gap: 18px;
+    margin-bottom: 20px;
+  }
+  .tr-score-ring {
+    width: 88px; height: 88px; border-radius: 50%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    position: relative; flex-shrink: 0;
+  }
+  .tr-score-ring::before {
+    content: ''; position: absolute; inset: 0; border-radius: 50%; padding: 4px;
+    background: conic-gradient(var(--accent) calc(var(--pct) * 3.6deg), var(--card-border) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #fff calc(100% - 3px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #fff calc(100% - 3px));
+  }
+  .tr-score-num { font-size: 1.4rem; font-weight: 700; line-height: 1; }
+  .tr-score-label { font-size: 0.7rem; color: var(--text-secondary); margin-top: 2px; }
+  .tr-test-label { font-size: 1rem; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+  .tr-summary-sub { font-size: 0.82rem; color: var(--text-muted); }
+
+  .tr-rows { margin-bottom: 18px; }
+  .tr-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .tr-row:last-child { margin-bottom: 0; }
+  .tr-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .tr-label { flex: 0 0 150px; font-size: 0.82rem; color: var(--text-secondary); }
+  .tr-bar { flex: 1; height: 8px; background: var(--surface); border-radius: 4px; overflow: hidden; }
+  .tr-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(0.22,1,0.36,1); }
+  .tr-pct { flex: 0 0 40px; text-align: right; font-size: 0.82rem; font-weight: 600; }
+  .tr-num { flex: 0 0 64px; text-align: right; font-size: 0.72rem; color: var(--text-muted); }
+
+  .tr-feedback { margin-bottom: 16px; }
+  .tr-line {
+    font-size: 0.92rem; line-height: 1.55;
+    margin: 6px 0; padding: 8px 12px; border-radius: var(--radius-sm);
+  }
+  .tr-bravo   { background: rgba(74,222,128,0.08); color: #86efac; }
+  .tr-nascent { background: rgba(250,204,21,0.08); color: #fde68a; }
+  .tr-work    { background: rgba(248,113,113,0.08); color: #fca5a5; }
+
+  .tr-reco {
+    background: var(--accent-glow);
+    border: 1px solid rgba(56,189,248,0.3);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+  }
+  .tr-reco-head {
+    font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--accent); font-weight: 600; margin-bottom: 6px;
+  }
+  .tr-reco p {
+    font-size: 0.92rem; line-height: 1.55; color: var(--text-primary);
+    margin: 4px 0;
+  }
+  .tr-feature { color: var(--text-secondary) !important; font-size: 0.85rem !important; }
+
+  /* Accordion shell (slide 5 pattern) */
+  .tr-accordion {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .tr-accordion-head {
+    width: 100%;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 16px 20px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    color: var(--text-primary);
+    text-align: left;
+  }
+  .tr-accordion-head:hover { background: rgba(56,189,248,0.04); }
+  .tr-accordion-head-text { flex: 1; }
+  .tr-accordion-head-title { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
+  .tr-accordion-head-sub { font-size: 0.8rem; color: var(--text-muted); }
+  .tr-accordion-chevron { font-size: 1.2rem; color: var(--accent); transition: transform 0.25s; }
+  .tr-accordion.open .tr-accordion-chevron { transform: rotate(180deg); }
+  .tr-accordion-body {
+    max-height: 0; overflow: hidden;
+    transition: max-height 0.4s ease;
+  }
+  .tr-accordion.open .tr-accordion-body { max-height: 2000px; }
+  .tr-accordion-body-inner { padding: 0 16px 16px; }
+
+  @media (max-width: 480px) {
+    .tr-label { flex: 0 0 110px; font-size: 0.75rem; }
+    .tr-num { flex: 0 0 50px; font-size: 0.68rem; }
+    .tr-pct { flex: 0 0 34px; font-size: 0.78rem; }
+  }
+`
+
+// ═══════════════════════════════════════════════════════════════════
+// Wire up an accordion (called after innerHTML is mounted).
+// ═══════════════════════════════════════════════════════════════════
+export function bindAccordion(rootEl) {
+  rootEl.querySelectorAll('.tr-accordion').forEach((acc) => {
+    const head = acc.querySelector('.tr-accordion-head')
+    if (!head) return
+    head.addEventListener('click', () => acc.classList.toggle('open'))
+  })
+}
