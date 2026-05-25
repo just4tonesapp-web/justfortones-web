@@ -1,19 +1,21 @@
-// ═══════════════════════════════════════
-// Test B – Two-Syllable Tone Listening (12 items)
-// Identical to Test A but with two-character combos
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// Test 2 — Two-syllable Tone Listening (15 items)
+// One question per tone-pair combo, excluding 3+3 sandhi → 4*4-1 = 15.
+// New flow per APP UI UX.pptx slides 12–16.
+// ═══════════════════════════════════════════════════════════════════
 import { navigate } from '../router.js'
-import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle, makeTwoSyllableItem, hasCharacter } from '../utils/pinyin.js'
+import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle, hasCharacter } from '../utils/pinyin.js'
 import { speakChinese, playDisyllable } from '../utils/audio.js'
 import { DISYLLABLE_BY_PAIR, hasDisyllableRecording } from '../utils/disyllableManifest.js'
 import { saveResult } from '../services/progressService.js'
+import {
+  analyzeDisyllabic, buildReportHTML, TONE_REPORT_CSS, bindAccordion,
+} from '../utils/toneReport.js'
 
-const TOTAL = 12
-const PASS_SCORE = 7
+const TOTAL = 15
+const PASS_SCORE = 9   // ~58% threshold preserved
 
-// Pre-build all 15 tone pair combos (3+3 omitted — that combination follows
-// tone-3 sandhi in natural speech and would mismatch the written tones), then
-// pick 12 ensuring variety.
+// 15 tone pair combos: every (t1, t2) where t1, t2 ∈ {1..4} minus 3+3.
 const ALL_PAIRS = []
 for (let a = 1; a <= 4; a++) {
   for (let b = 1; b <= 4; b++) {
@@ -30,14 +32,11 @@ export function testBView(container) {
   let answers = []
   let qStart = 0
   let testStart = 0
-
-  // Items used in the previous attempt — excluded on retake.
   let previousFiles = new Set()
 
-  // Generate 12 two-syllable questions, drawing from real recordings.
-  // Falls back to synthesized syllables for any tone-pair without recordings.
   function generate() {
-    const pairs = shuffle(ALL_PAIRS).slice(0, 12)
+    // 15q test → use every combo exactly once, shuffled.
+    const pairs = shuffle(ALL_PAIRS.slice())
     const usedFiles = new Set()
 
     const pickRecorded = (t1, t2) => {
@@ -70,12 +69,9 @@ export function testBView(container) {
     previousFiles = new Set(questions.filter(q => q.file).map(q => `${q.pairKey}/${q.file}`))
   }
 
-  // Build 4 choices: correct pair + 3 distractors (vary tone combos)
+  // 4 multiple-choice options: correct combo + 3 distractors.
   function makeChoices(q) {
     const correct = { t1: q.tone1, t2: q.tone2 }
-    const choices = [correct]
-
-    // Generate 3 unique distractor tone combos — exclude 3+3 (sandhi)
     const allCombos = []
     for (let a = 1; a <= 4; a++) {
       for (let b = 1; b <= 4; b++) {
@@ -86,9 +82,7 @@ export function testBView(container) {
       }
     }
     const distractors = shuffle(allCombos).slice(0, 3)
-    choices.push(...distractors)
-
-    return shuffle(choices)
+    return shuffle([correct, ...distractors])
   }
 
   // ── Mount ──
@@ -98,9 +92,9 @@ export function testBView(container) {
         <button class="back-home-btn" id="tb-home">← Home</button>
       </div>
       <div class="testb-header">
-        <span class="badge">Diagnostic Step 1b</span>
-        <h1>Test B — Tone Pairs</h1>
-        <p>Can you identify tones in two-syllable combinations?</p>
+        <span class="badge">Step 2 of 4</span>
+        <h1>2️⃣ Listening — 2-Syllable Words</h1>
+        <p>Now let's identify tones in two-syllable combinations.</p>
       </div>
 
       <!-- Intro -->
@@ -108,17 +102,17 @@ export function testBView(container) {
         <div style="font-size:3rem;margin-bottom:16px">🎧🎧</div>
         <h2>Two syllables this time!</h2>
         <p style="color:var(--text-secondary);margin:12px 0;line-height:1.6">
-          You'll hear 12 two-syllable combinations.<br>
-          Pick the pinyin with the correct tone marks for both syllables.
+          You'll hear <strong>15 different two-syllable Chinese words</strong>.
+          Pick the correct tones.
         </p>
         <div class="intro-rules">
           <strong>How it works:</strong><br>
-          — 12 questions, one at a time<br>
+          — 15 questions, one for each tone-pair combination<br>
           — Each item has two syllables with their own tones<br>
           — Tap the speaker to hear the combination<br>
-          — Score ${PASS_SCORE}+ out of 12 to pass ✓
+          — Pick the pinyin with the correct tone marks
         </div>
-        <button class="btn btn-primary btn-lg" id="tb-start">Start Test B</button>
+        <button class="btn btn-primary btn-lg" id="tb-start">Start Now</button>
       </div>
 
       <!-- Quiz -->
@@ -142,14 +136,14 @@ export function testBView(container) {
         </div>
       </div>
 
-      <!-- Report -->
+      <!-- Score screen (accordion-style report) -->
       <div id="tb-report" class="hidden"></div>
     </div>
     <div class="feedback-toast" id="tb-toast"></div>
   `
 
   const style = document.createElement('style')
-  style.textContent = scopedCSS
+  style.textContent = scopedCSS + TONE_REPORT_CSS
   container.appendChild(style)
 
   const $ = (id) => document.getElementById(id)
@@ -219,7 +213,6 @@ export function testBView(container) {
       return
     }
 
-    // No recording — fall back to TTS of any known characters
     const char1 = getTTSChar(q.syl1, q.tone1) ?? ''
     const char2 = getTTSChar(q.syl2, q.tone2) ?? ''
     speakChinese(char1 + char2 || null, q.tone1, done)
@@ -238,14 +231,13 @@ export function testBView(container) {
     answers.push({
       syl1: q.syl1, syl2: q.syl2,
       tone1: q.tone1, tone2: q.tone2,
+      tones: [q.tone1, q.tone2],     // for analyzeDisyllabic
       selT1: selected.t1, selT2: selected.t2,
       correct: ok,
-      correctPinyin,
-      selectedPinyin,
+      correctPinyin, selectedPinyin,
       time: Date.now() - qStart,
     })
 
-    // Highlight choices
     document.querySelectorAll('#tb-choices .choice-btn').forEach(b => {
       const bt1 = parseInt(b.dataset.t1)
       const bt2 = parseInt(b.dataset.t2)
@@ -261,9 +253,9 @@ export function testBView(container) {
 
     setTimeout(() => {
       currentQ++
-      if (currentQ >= TOTAL) showReport()
+      if (currentQ >= TOTAL) showScoreScreen()
       else loadQ()
-    }, 1600)
+    }, 1500)
   }
 
   function showToast(ok) {
@@ -275,94 +267,86 @@ export function testBView(container) {
     t.textContent = msgs[Math.floor(Math.random() * msgs.length)]
     t.classList.add(ok ? 'correct' : 'incorrect')
     requestAnimationFrame(() => t.classList.add('show'))
-    setTimeout(() => t.classList.remove('show'), 1200)
+    setTimeout(() => t.classList.remove('show'), 1100)
   }
 
-  // ── Report ──
-  function showReport() {
+  function showScoreScreen() {
     $('tb-quiz').classList.add('hidden')
     const el = $('tb-report')
     el.classList.remove('hidden')
 
-    const pct = Math.round((score / TOTAL) * 100)
     const passed = score >= PASS_SCORE
+    saveResult('B', score, TOTAL, { answers, totalTime: Date.now() - testStart })
 
-    // Save result
-    saveResult('B', score, TOTAL, { answers })
-
-    // Detail rows
-    let details = ''
-    answers.forEach((a, i) => {
-      const icon = a.correct ? '✅' : '❌'
-      const ts = (a.time / 1000).toFixed(1) + 's'
-      const display = a.correct ? a.correctPinyin : `${a.selectedPinyin} → ${a.correctPinyin}`
-      details += `
-        <div class="detail-item">
-          <span class="detail-icon">${icon}</span>
-          <span class="detail-qn">${i + 1}.</span>
-          <span class="detail-pinyin">${display}</span>
-          <span class="detail-time">${ts}</span>
-        </div>`
+    const analysis = analyzeDisyllabic(answers)
+    const reportInner = buildReportHTML({
+      analysis, score, total: TOTAL,
+      testLabel: 'Test 2 · Listening 2-syllable',
+      shape: 'disyl',
     })
-
-    let verdict = ''
-    if (passed) {
-      verdict = `🎉 Fantastic! You scored <strong>${score}/${TOTAL}</strong> on Test B. You can identify and distinguish the four tones effortlessly! Now let's see if you can pronounce the four tones like a Chinese native!`
-    } else {
-      verdict = `You scored <strong>${score}/${TOTAL}</strong> on Test B. Fluctuation in performance when listening to foreign sounds is totally expected. Want to retake the test, or go straight to practice?`
-    }
 
     el.innerHTML = `
       <div class="app-shell animate-in">
-        <div class="text-center" style="margin-bottom:28px">
-          <h2 style="font-size:1.5rem;margin-bottom:4px">Test B — Results</h2>
-          <div class="score-ring" style="--pct:${pct}">
-            <span class="score-num">${score}/${TOTAL}</span>
-            <span class="score-label">${pct}%</span>
+        <div class="score-card">
+          <div class="score-headline">🎯 You scored</div>
+          <div class="score-big">${score}/${TOTAL}</div>
+          <div class="score-sub">
+            ${passed
+              ? `Great work — your listening is solid across tone combinations.`
+              : `Fluctuation in performance when listening to foreign sounds is totally expected.`}
           </div>
-          <div style="color:var(--text-secondary);line-height:1.5;padding:0 12px">${verdict}</div>
         </div>
 
-        <div class="card" style="margin-bottom:28px">
-          <h3 class="section-head">Question Details</h3>
-          ${details}
+        <div class="tr-accordion" id="tb-acc">
+          <button class="tr-accordion-head" type="button">
+            <div class="tr-accordion-head-text">
+              <div class="tr-accordion-head-title">📊 Open your Report</div>
+              <div class="tr-accordion-head-sub">Tap to see which tone combinations need work</div>
+            </div>
+            <div class="tr-accordion-chevron">▾</div>
+          </button>
+          <div class="tr-accordion-body">
+            <div class="tr-accordion-body-inner">
+              ${reportInner.html}
+            </div>
+          </div>
         </div>
 
-        <div class="report-actions">
-          ${passed ? `
-            <button class="btn btn-secondary" id="tb-retry">🔄 Retake</button>
-            <button class="btn btn-primary" id="tb-continue">→ Continue to Test C</button>
-          ` : `
-            <button class="btn btn-primary" id="tb-retry">🔄 Retake the Test</button>
-            <button class="btn btn-primary" id="tb-continue">🎧 Disyllabic Words Practice</button>
-          `}
+        <div class="next-challenge">
+          <div class="next-challenge-head">Jump to Speaking Challenges!</div>
+          <button class="next-challenge-btn" id="tb-next">
+            <div class="next-challenge-icon">3️⃣</div>
+            <div class="next-challenge-body">
+              <div class="next-challenge-title">Speaking — 1-Syllable Words</div>
+              <div class="next-challenge-sub">12 questions · record your voice</div>
+            </div>
+            <div class="next-challenge-arrow">→</div>
+          </button>
+        </div>
+
+        <div class="retake-row">
+          <p class="retake-prompt">Do you want to take this test again? Fluctuation in performance is totally expected.</p>
+          <button class="btn btn-secondary" id="tb-retry">🔄 Test Again</button>
         </div>
       </div>
     `
 
+    bindAccordion(el)
     document.getElementById('tb-retry').addEventListener('click', startTest)
-    document.getElementById('tb-continue').addEventListener('click', () => {
-      if (passed) {
-        navigate('/test-c')
-      } else {
-        sessionStorage.setItem('j4t_practice_set', '1')
-        sessionStorage.setItem('j4t_practice_return', '/test-b')
-        navigate('/practice-recognition')
-      }
-    })
+    document.getElementById('tb-next').addEventListener('click', () => navigate('/test-c'))
   }
 }
 
-// ═══════════════════════════════════════
-// Scoped CSS (reuses most of Test A styles + overrides)
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// Scoped CSS
+// ═══════════════════════════════════════════════════════════════════
 const scopedCSS = `
   .testb-header {
     text-align: center;
     margin-bottom: 28px;
   }
   .testb-header h1 {
-    font-size: 1.65rem;
+    font-size: 1.55rem;
     font-weight: 700;
     margin: 10px 0 6px;
     background: linear-gradient(135deg, #f1f5f9 30%, #38bdf8);
@@ -409,7 +393,6 @@ const scopedCSS = `
     text-align: center; font-size: 0.85rem;
     color: var(--text-muted); margin-bottom: 20px;
   }
-
   .audio-area {
     display: flex; flex-direction: column;
     align-items: center; margin-bottom: 28px;
@@ -459,7 +442,10 @@ const scopedCSS = `
     text-align: center; transition: all 0.2s ease;
     font-family: inherit; color: var(--text-primary);
     display: flex; align-items: center; gap: 12px;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
   }
+  .choice-btn:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
   .choice-btn:hover:not(.disabled) {
     border-color: var(--accent);
     background: var(--accent-glow);
@@ -479,40 +465,57 @@ const scopedCSS = `
   .choice-btn.disabled { cursor: default; opacity: 0.55; }
   .choice-btn.correct.disabled, .choice-btn.incorrect.disabled { opacity: 1; }
 
-  /* Report */
-  .score-ring {
-    width: 120px; height: 120px; border-radius: 50%;
-    margin: 0 auto 16px; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; position: relative;
+  /* Score screen */
+  .score-card {
+    text-align: center;
+    padding: 24px 16px 28px;
+    margin-bottom: 18px;
   }
-  .score-ring::before {
-    content: ''; position: absolute; inset: 0; border-radius: 50%; padding: 4px;
-    background: conic-gradient(var(--accent) calc(var(--pct) * 3.6deg), var(--card-border) 0);
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #fff calc(100% - 3px));
-    mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #fff calc(100% - 3px));
+  .score-headline { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); margin-bottom: 8px; }
+  .score-big {
+    font-size: 3.2rem; font-weight: 700;
+    background: linear-gradient(135deg, #f1f5f9 30%, #38bdf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1; margin-bottom: 8px;
   }
-  .score-num { font-size: 2.2rem; font-weight: 700; line-height: 1; }
-  .score-label { font-size: 0.78rem; color: var(--text-secondary); }
+  .score-sub { color: var(--text-secondary); font-size: 0.92rem; line-height: 1.5; }
 
-  .section-head {
-    font-size: 0.85rem; text-transform: uppercase;
-    letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 16px;
+  .next-challenge { margin-top: 22px; }
+  .next-challenge-head {
+    text-align: center; font-size: 0.92rem; font-weight: 600;
+    color: var(--text-primary); margin-bottom: 10px;
   }
-
-  .detail-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 0; border-bottom: 1px solid var(--card-border); font-size: 0.88rem;
+  .next-challenge-btn {
+    width: 100%;
+    display: flex; align-items: center; gap: 14px;
+    background: linear-gradient(135deg, rgba(56,189,248,0.15), rgba(129,140,248,0.15));
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    cursor: pointer; font-family: inherit;
+    color: var(--text-primary);
+    transition: all 0.2s;
   }
-  .detail-item:last-child { border-bottom: none; }
-  .detail-icon { flex-shrink: 0; font-size: 1rem; }
-  .detail-qn { flex: 0 0 24px; color: var(--text-muted); font-size: 0.78rem; }
-  .detail-pinyin { flex: 1; font-weight: 600; }
-  .detail-time { flex: 0 0 36px; text-align: right; color: var(--text-muted); font-size: 0.78rem; }
+  .next-challenge-btn:hover {
+    background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(129,140,248,0.25));
+    transform: translateY(-1px);
+  }
+  .next-challenge-icon { font-size: 1.8rem; flex-shrink: 0; }
+  .next-challenge-body { flex: 1; text-align: left; }
+  .next-challenge-title { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
+  .next-challenge-sub { font-size: 0.8rem; color: var(--text-secondary); }
+  .next-challenge-arrow { font-size: 1.3rem; color: var(--accent); flex-shrink: 0; }
 
-  .report-actions { display: flex; gap: 12px; }
+  .retake-row { margin-top: 22px; text-align: center; }
+  .retake-prompt {
+    color: var(--text-muted); font-size: 0.82rem;
+    margin-bottom: 10px; line-height: 1.5;
+  }
 
   @media (max-width: 480px) {
     .play-btn { width: 80px; height: 80px; }
-    .report-actions { flex-direction: column; }
+    .score-big { font-size: 2.6rem; }
   }
 `

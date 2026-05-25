@@ -20,6 +20,9 @@ const TONE_COACH = {
 import { supabase } from '../supabaseClient.js'
 import { saveResult } from '../services/progressService.js'
 import { getMelSpectrogramImage } from '../utils/models/tonetModel.js'
+import {
+  analyzeDisyllabic, buildReportHTML, TONE_REPORT_CSS, bindAccordion,
+} from '../utils/toneReport.js'
 
 const TOTAL = 12
 const PASS_SCORE = 7
@@ -239,7 +242,7 @@ export function testDView(container) {
   `
 
   const style = document.createElement('style')
-  style.textContent = scopedCSS
+  style.textContent = scopedCSS + TONE_REPORT_CSS + tdExtraCSS
   container.appendChild(style)
 
   const $ = (id) => document.getElementById(id)
@@ -774,102 +777,74 @@ export function testDView(container) {
     setTimeout(() => t.classList.remove('show'), 1200)
   }
 
-  // ── Report ──
+  // ── Report (accordion-style score screen, slide 20) ──
   async function showReport() {
     $('td-quiz').classList.add('hidden')
     const el = $('td-report')
     el.classList.remove('hidden')
 
-    const pct = Math.round((score / TOTAL) * 100)
     const passed = score >= PASS_SCORE
-
-    // Save result
     const elapsed = Math.round((Date.now() - testStart) / 1000)
     await saveResult('D', score, TOTAL, { elapsed, answers })
 
-    // Tone breakdown (based on first character's tone)
-    const toneColors = { 1: 'var(--tone1)', 2: 'var(--tone2)', 3: 'var(--tone3)', 4: 'var(--tone4)' }
-    const toneNames = { 1: '1st (High ─)', 2: '2nd (Rising ／)', 3: '3rd (Dip ∨)', 4: '4th (Fall ＼)' }
-    let toneRows = ''
-    for (let t = 1; t <= 4; t++) {
-      const qs = answers.filter(a => a.targetTone === t)
-      const c = qs.filter(a => a.passed).length
-      const p = qs.length ? Math.round(c / qs.length * 100) : 0
-      toneRows += `
-        <div class="tone-row">
-          <div class="tone-dot" style="background:${toneColors[t]}"></div>
-          <div class="tone-row-label">${toneNames[t]}</div>
-          <div class="tone-bar-track"><div class="tone-bar-fill" style="width:${p}%;background:${toneColors[t]}"></div></div>
-          <div class="tone-row-pct" style="color:${toneColors[t]}">${p}%</div>
-        </div>`
-    }
-
-    // Detail rows
-    let details = ''
-    answers.forEach((a, i) => {
-      const icon = a.passed ? '✅' : '❌'
-      const pinyin1 = applyTone(a.bases[0], a.tones[0])
-      const pinyin2 = applyTone(a.bases[1], a.tones[1])
-      const d1 = a.detectedTone ? `T${a.detectedTone}` : '—'
-      const d2 = a.detectedTone2 ? `T${a.detectedTone2}` : '—'
-      const detected = `(detected: ${d1} / ${d2})`
-      details += `
-        <div class="detail-item">
-          <span class="detail-icon">${icon}</span>
-          <span class="detail-qn">${i + 1}.</span>
-          <span class="detail-char">${a.chars}</span>
-          <span class="detail-pinyin">${pinyin1} ${pinyin2}</span>
-          <span class="detail-detected">${detected}</span>
-        </div>`
+    // Map this test's per-q field (`passed`) to the shared analyzer's `correct`.
+    const adapted = answers.map(a => ({ tones: a.tones, correct: !!a.passed }))
+    const analysis = analyzeDisyllabic(adapted)
+    const reportInner = buildReportHTML({
+      analysis, score, total: TOTAL,
+      testLabel: 'Test 4 · Speaking 2-syllable',
+      shape: 'disyl',
     })
-
-    const verdict = passed
-      ? `🎉 Fantastic! You scored <strong>${score}/${TOTAL}</strong>. You can pronounce the correct tone combinations almost effortlessly! You nailed it. Now let's try to crack the tones of the most frequently used Chinese characters and words.`
-      : `You scored <strong>${score}/${TOTAL}</strong>. Fluctuation in performance when producing foreign sounds is totally expected. Want to retake the test, or go straight to practice?`
 
     el.innerHTML = `
       <div class="app-shell animate-in">
-        <div class="text-center" style="margin-bottom:28px">
-          <h2 style="font-size:1.5rem;margin-bottom:4px">Test D — Results</h2>
-          <div class="score-ring" style="--pct:${pct}">
-            <span class="score-num">${score}/${TOTAL}</span>
-            <span class="score-label">${pct}%</span>
+        <div class="score-card">
+          <div class="score-headline">🎯 Final score</div>
+          <div class="score-big">${score}/${TOTAL}</div>
+          <div class="score-sub">
+            ${passed
+              ? `Fantastic! You can pronounce tone combinations almost effortlessly.`
+              : `Fluctuation in performance when producing foreign sounds is totally expected.`}
           </div>
-          <div style="color:var(--text-secondary);line-height:1.5;padding:0 12px">${verdict}</div>
         </div>
 
-        <div class="card" style="margin-bottom:16px">
-          <h3 class="section-head">Performance by Tone (1st character)</h3>
-          ${toneRows}
+        <div class="tr-accordion">
+          <button class="tr-accordion-head" type="button">
+            <div class="tr-accordion-head-text">
+              <div class="tr-accordion-head-title">📊 Open your Report</div>
+              <div class="tr-accordion-head-sub">Tap to see per-tone breakdown & recommendations</div>
+            </div>
+            <div class="tr-accordion-chevron">▾</div>
+          </button>
+          <div class="tr-accordion-body">
+            <div class="tr-accordion-body-inner">
+              ${reportInner.html}
+            </div>
+          </div>
         </div>
 
-        <div class="card" style="margin-bottom:28px">
-          <h3 class="section-head">Question Details</h3>
-          ${details}
+        <div class="next-challenge-d">
+          <div class="next-challenge-head-d">🎉 You've finished all 4 tests!</div>
+          <button class="next-challenge-btn-d" id="td-next">
+            <div class="next-challenge-icon-d">📋</div>
+            <div class="next-challenge-body-d">
+              <div class="next-challenge-title-d">Get your full report</div>
+              <div class="next-challenge-sub-d">Composite analysis across all four tests</div>
+            </div>
+            <div class="next-challenge-arrow-d">→</div>
+          </button>
         </div>
 
-        <div class="report-actions">
-          ${passed ? `
-            <button class="btn btn-secondary" id="td-retry">🔄 Retake</button>
-            <button class="btn btn-primary" id="td-continue">→ Continue to Test X</button>
-          ` : `
-            <button class="btn btn-primary" id="td-retry">🔄 Retake the Test</button>
-            <button class="btn btn-primary" id="td-continue">🎤 Disyllabic Words Tone Practice</button>
-          `}
+        <div class="retake-row-d">
+          <p class="retake-prompt-d">Do you want to take this test again? Fluctuation in performance is totally expected.</p>
+          <button class="btn btn-secondary" id="td-retry">🔄 Test Again</button>
         </div>
       </div>
     `
 
+    bindAccordion(el)
     document.getElementById('td-retry').addEventListener('click', startTest)
-    document.getElementById('td-continue').addEventListener('click', () => {
-      if (passed) {
-        navigate('/test-xyz')
-      } else {
-        sessionStorage.setItem('j4t_practice_set', '1')
-        sessionStorage.setItem('j4t_practice_return', '/test-d')
-        navigate('/practice-production')
-      }
-    })
+    document.getElementById('td-next').addEventListener('click', () => navigate('/report'))
   }
 
   // Cleanup on unmount
@@ -1143,5 +1118,59 @@ const scopedCSS = `
     .tone-row-label { flex: 0 0 90px; }
     .td-judge-card { min-width: 62px; padding: 8px 8px; }
     .detail-char { flex: 0 0 40px; }
+  }
+`
+
+// ── New score-screen styles (slides 20, 12) ──
+const tdExtraCSS = `
+  .score-card {
+    text-align: center;
+    padding: 24px 16px 28px;
+    margin-bottom: 18px;
+  }
+  .score-headline { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); margin-bottom: 8px; }
+  .score-big {
+    font-size: 3.2rem; font-weight: 700;
+    background: linear-gradient(135deg, #f1f5f9 30%, #38bdf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1; margin-bottom: 8px;
+  }
+  .score-sub { color: var(--text-secondary); font-size: 0.92rem; line-height: 1.5; }
+
+  .next-challenge-d { margin-top: 22px; }
+  .next-challenge-head-d {
+    text-align: center; font-size: 1.02rem; font-weight: 600;
+    color: var(--text-primary); margin-bottom: 10px;
+  }
+  .next-challenge-btn-d {
+    width: 100%;
+    display: flex; align-items: center; gap: 14px;
+    background: linear-gradient(135deg, rgba(74,222,128,0.18), rgba(56,189,248,0.18));
+    border: 1px solid var(--correct);
+    border-radius: var(--radius);
+    padding: 18px;
+    cursor: pointer; font-family: inherit;
+    color: var(--text-primary);
+    transition: all 0.2s;
+  }
+  .next-challenge-btn-d:hover {
+    background: linear-gradient(135deg, rgba(74,222,128,0.28), rgba(56,189,248,0.28));
+    transform: translateY(-1px);
+  }
+  .next-challenge-icon-d { font-size: 1.8rem; flex-shrink: 0; }
+  .next-challenge-body-d { flex: 1; text-align: left; }
+  .next-challenge-title-d { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
+  .next-challenge-sub-d { font-size: 0.8rem; color: var(--text-secondary); }
+  .next-challenge-arrow-d { font-size: 1.3rem; color: var(--correct); flex-shrink: 0; }
+
+  .retake-row-d { margin-top: 22px; text-align: center; }
+  .retake-prompt-d {
+    color: var(--text-muted); font-size: 0.82rem;
+    margin-bottom: 10px; line-height: 1.5;
+  }
+  @media (max-width: 480px) {
+    .score-big { font-size: 2.6rem; }
   }
 `

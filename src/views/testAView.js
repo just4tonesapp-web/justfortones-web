@@ -1,14 +1,19 @@
-// ═══════════════════════════════════════
-// Test A – Tone Listening Quiz (12 items)
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// Test 1 — Tone Listening, single syllables (8 items, 2 per tone)
+// New flow per APP UI UX.pptx slides 4–11.
+// ═══════════════════════════════════════════════════════════════════
 import { navigate } from '../router.js'
 import { SYLLABLE_POOL, applyTone, shuffle, hasCharacter } from '../utils/pinyin.js'
 import { playSyllable } from '../utils/audio.js'
 import { hasRecording } from '../utils/recordingsManifest.js'
 import { saveResult } from '../services/progressService.js'
+import {
+  analyzeSingleSyllable, buildReportHTML, TONE_REPORT_CSS, bindAccordion,
+} from '../utils/toneReport.js'
 
-const TOTAL = 12
-const PASS_SCORE = 7
+const TOTAL = 8
+const PER_TONE = 2          // 2 questions per tone × 4 tones = 8
+const PASS_SCORE = 5        // ~58% threshold preserved
 
 export function testAView(container) {
   // ── State ──
@@ -19,15 +24,11 @@ export function testAView(container) {
   let answers = []
   let qStart = 0
   let testStart = 0
-
-  // Items used in the previous attempt — excluded on retake so users get fresh items.
   let previousItems = new Set()
 
-  // ── Generate 12 questions (3 per tone, random syllables) ──
-  // Only pick syllables that have a recorded m4a for the chosen tone,
-  // so every question plays a real human voice.
+  // ── Generate ──
   function generate() {
-    const tones = shuffle([1,1,1, 2,2,2, 3,3,3, 4,4,4])
+    const tones = shuffle([1,1, 2,2, 3,3, 4,4])
     const used = new Set()
     questions = tones.map((t) => {
       const fresh = SYLLABLE_POOL.filter(s =>
@@ -48,27 +49,27 @@ export function testAView(container) {
         <button class="back-home-btn" id="ta-home">← Home</button>
       </div>
       <div class="testa-header">
-        <span class="badge">Diagnostic Step 1</span>
-        <h1>Test A — Tone Listening</h1>
-        <p>Can you identify the four tones by ear?</p>
+        <span class="badge">Step 1 of 4</span>
+        <h1>1️⃣ Listening — 1-Syllable Words</h1>
+        <p>Find out exactly where your tone skills stand.</p>
       </div>
 
       <!-- Intro -->
       <div id="ta-intro" class="card animate-in text-center">
         <div style="font-size:3rem;margin-bottom:16px">🎧</div>
-        <h2>Ready to test your ears?</h2>
+        <h2>Ready?</h2>
         <p style="color:var(--text-secondary);margin:12px 0;line-height:1.6">
-          You'll hear 12 syllables, each in one of the four tones.<br>
-          Pick the pinyin with the correct tone mark.
+          In this test, you are going to hear <strong>8 different single-syllable Chinese words</strong>.
+          Pick the correct tones.
         </p>
         <div class="intro-rules">
           <strong>How it works:</strong><br>
-          — 12 questions, one at a time<br>
-          — Each tone appears exactly 3 times<br>
+          — 8 questions, one at a time<br>
+          — Each tone appears exactly ${PER_TONE} times<br>
           — Tap the speaker to hear the syllable<br>
-          — Score ${PASS_SCORE}+ to pass ✓
+          — Pick the pinyin with the correct tone mark
         </div>
-        <button class="btn btn-primary btn-lg" id="ta-start">Start Test</button>
+        <button class="btn btn-primary btn-lg" id="ta-start">Start Now</button>
       </div>
 
       <!-- Quiz -->
@@ -92,24 +93,21 @@ export function testAView(container) {
         </div>
       </div>
 
-      <!-- Report -->
+      <!-- Report (accordion-style score screen → slides 5/6) -->
       <div id="ta-report" class="hidden"></div>
     </div>
     <div class="feedback-toast" id="ta-toast"></div>
   `
 
-  // inject scoped styles
   const style = document.createElement('style')
-  style.textContent = scopedCSS
+  style.textContent = scopedCSS + TONE_REPORT_CSS
   container.appendChild(style)
 
-  // ── Bind ──
   const $ = (id) => document.getElementById(id)
   $('ta-home').addEventListener('click', () => navigate('/'))
   $('ta-start').addEventListener('click', startTest)
   $('ta-play').addEventListener('click', playCurrent)
 
-  // ── Actions ──
   function startTest() {
     generate()
     currentQ = 0; score = 0; answers = []; testStart = Date.now()
@@ -130,7 +128,6 @@ export function testAView(container) {
     $('ta-hint').textContent = 'Tap to listen'
     $('ta-play').classList.remove('playing')
 
-    // Build 4 choices in shuffled order
     const order = shuffle([1, 2, 3, 4])
     const letters = ['A', 'B', 'C', 'D']
     const toneNames = ['', '1st tone ─', '2nd tone ／', '3rd tone ∨', '4th tone ＼']
@@ -150,7 +147,6 @@ export function testAView(container) {
       el.appendChild(btn)
     })
 
-    // re-animate
     const card = $('ta-card')
     card.style.animation = 'none'
     card.offsetHeight
@@ -177,14 +173,10 @@ export function testAView(container) {
     if (ok) score++
 
     answers.push({
-      syllable: q.syllable,
-      tone: q.tone,
-      selected,
-      correct: ok,
-      time: Date.now() - qStart,
+      syllable: q.syllable, tone: q.tone,
+      selected, correct: ok, time: Date.now() - qStart,
     })
 
-    // Highlight
     document.querySelectorAll('#ta-choices .choice-btn').forEach(b => {
       const t = parseInt(b.dataset.tone)
       if (t === q.tone) b.classList.add('correct')
@@ -197,9 +189,9 @@ export function testAView(container) {
 
     setTimeout(() => {
       currentQ++
-      if (currentQ >= TOTAL) showReport()
+      if (currentQ >= TOTAL) showScoreScreen()
       else loadQ()
-    }, 1600)
+    }, 1500)
   }
 
   function showToast(ok) {
@@ -211,116 +203,90 @@ export function testAView(container) {
     t.textContent = msgs[Math.floor(Math.random() * msgs.length)]
     t.classList.add(ok ? 'correct' : 'incorrect')
     requestAnimationFrame(() => t.classList.add('show'))
-    setTimeout(() => t.classList.remove('show'), 1200)
+    setTimeout(() => t.classList.remove('show'), 1100)
   }
 
-  // ── Report ──
-  function showReport() {
+  // ═══════════════════════════════════════════════════════════════
+  // Score screen — slide 5 "You scored ( ), click to open your REPORT"
+  // The report itself is hidden in an accordion below the score.
+  // ═══════════════════════════════════════════════════════════════
+  function showScoreScreen() {
     $('ta-quiz').classList.add('hidden')
     const el = $('ta-report')
     el.classList.remove('hidden')
 
-    const pct = Math.round((score / TOTAL) * 100)
     const passed = score >= PASS_SCORE
-    const totalTime = Date.now() - testStart
+    saveResult('A', score, TOTAL, { answers, totalTime: Date.now() - testStart })
 
-    // Save result
-    saveResult('A', score, TOTAL, { answers, totalTime })
-
-    // Tone stats
-    const toneColors = { 1:'var(--tone1)', 2:'var(--tone2)', 3:'var(--tone3)', 4:'var(--tone4)' }
-    const toneNames = { 1:'1st (High ─)', 2:'2nd (Rising ／)', 3:'3rd (Dip ∨)', 4:'4th (Fall ＼)' }
-    let toneRows = ''
-    for (let t = 1; t <= 4; t++) {
-      const qs = answers.filter(a => a.tone === t)
-      const c = qs.filter(a => a.correct).length
-      const p = qs.length ? Math.round(c / qs.length * 100) : 0
-      toneRows += `
-        <div class="tone-row">
-          <div class="tone-dot" style="background:${toneColors[t]}"></div>
-          <div class="tone-row-label">${toneNames[t]}</div>
-          <div class="tone-bar-track"><div class="tone-bar-fill" style="width:${p}%;background:${toneColors[t]}"></div></div>
-          <div class="tone-row-pct" style="color:${toneColors[t]}">${p}%</div>
-        </div>`
-    }
-
-    // Detail rows
-    let details = ''
-    answers.forEach((a, i) => {
-      const icon = a.correct ? '✅' : '❌'
-      const ts = (a.time / 1000).toFixed(1) + 's'
-      const cp = applyTone(a.syllable, a.tone)
-      const sp = applyTone(a.syllable, a.selected)
-      const display = a.correct ? cp : `${sp} → ${cp}`
-      details += `
-        <div class="detail-item">
-          <span class="detail-icon">${icon}</span>
-          <span class="detail-qn">${i+1}.</span>
-          <span class="detail-pinyin">${display}</span>
-          <span class="detail-time">${ts}</span>
-        </div>`
+    const analysis = analyzeSingleSyllable(answers)
+    const reportInner = buildReportHTML({
+      analysis, score, total: TOTAL,
+      testLabel: 'Test 1 · Listening 1-syllable',
+      shape: 'single',
     })
-
-    const verdict = passed
-      ? `🎉 Great Job! Incredible! You nailed it! You scored <strong>${score}/${TOTAL}</strong>. Now let's see if you can identify tones of disyllabic Chinese words!`
-      : `You scored <strong>${score}/${TOTAL}</strong>. Fluctuation in performance when listening to foreign sounds is totally expected. Want to retake the test, or go straight to practice?`
 
     el.innerHTML = `
       <div class="app-shell animate-in">
-        <div class="text-center" style="margin-bottom:28px">
-          <h2 style="font-size:1.5rem;margin-bottom:4px">Test A — Results</h2>
-          <div class="score-ring" style="--pct:${pct}">
-            <span class="score-num">${score}/${TOTAL}</span>
-            <span class="score-label">${pct}%</span>
+        <div class="score-card">
+          <div class="score-headline">🎯 You scored</div>
+          <div class="score-big">${score}/${TOTAL}</div>
+          <div class="score-sub">
+            ${passed
+              ? `Nice work — your ear is tuned!`
+              : `Fluctuation in performance when listening to foreign sounds is totally expected.`}
           </div>
-          <div style="color:var(--text-secondary);line-height:1.5;padding:0 12px">${verdict}</div>
         </div>
 
-        <div class="card" style="margin-bottom:16px">
-          <h3 class="section-head">Performance by Tone</h3>
-          ${toneRows}
+        <div class="tr-accordion" id="ta-acc">
+          <button class="tr-accordion-head" type="button">
+            <div class="tr-accordion-head-text">
+              <div class="tr-accordion-head-title">📊 Open your Report</div>
+              <div class="tr-accordion-head-sub">Tap to see per-tone breakdown & recommendations</div>
+            </div>
+            <div class="tr-accordion-chevron">▾</div>
+          </button>
+          <div class="tr-accordion-body">
+            <div class="tr-accordion-body-inner">
+              ${reportInner.html}
+            </div>
+          </div>
         </div>
 
-        <div class="card" style="margin-bottom:28px">
-          <h3 class="section-head">Question Details</h3>
-          ${details}
+        <div class="next-challenge">
+          <div class="next-challenge-head">Try Next Challenge!</div>
+          <button class="next-challenge-btn" id="ta-next">
+            <div class="next-challenge-icon">2️⃣</div>
+            <div class="next-challenge-body">
+              <div class="next-challenge-title">Listening — 2-Syllable Words</div>
+              <div class="next-challenge-sub">15 questions · all tone combinations</div>
+            </div>
+            <div class="next-challenge-arrow">→</div>
+          </button>
         </div>
 
-        <div class="report-actions">
-          ${passed ? `
-            <button class="btn btn-secondary" id="ta-retry">🔄 Retake</button>
-            <button class="btn btn-primary" id="ta-continue">→ Continue to Test B</button>
-          ` : `
-            <button class="btn btn-primary" id="ta-retry">🔄 Retake the Test</button>
-            <button class="btn btn-primary" id="ta-continue">🎧 Single Syllable Practice</button>
-          `}
+        <div class="retake-row">
+          <p class="retake-prompt">Do you want to take this test again? Fluctuation in performance is totally expected.</p>
+          <button class="btn btn-secondary" id="ta-retry">🔄 Test Again</button>
         </div>
       </div>
     `
 
+    bindAccordion(el)
     document.getElementById('ta-retry').addEventListener('click', startTest)
-    document.getElementById('ta-continue').addEventListener('click', () => {
-      if (passed) {
-        navigate('/test-b')
-      } else {
-        sessionStorage.setItem('j4t_practice_set', '1')
-        sessionStorage.setItem('j4t_practice_return', '/test-a')
-        navigate('/practice-recognition')
-      }
-    })
+    document.getElementById('ta-next').addEventListener('click', () => navigate('/test-b'))
   }
 }
 
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // Scoped CSS for Test A
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 const scopedCSS = `
   .testa-header {
     text-align: center;
     margin-bottom: 28px;
   }
   .testa-header h1 {
-    font-size: 1.65rem;
+    font-size: 1.55rem;
     font-weight: 700;
     margin: 10px 0 6px;
     background: linear-gradient(135deg, #f1f5f9 30%, #38bdf8);
@@ -345,7 +311,6 @@ const scopedCSS = `
   }
   .intro-rules strong { color: var(--text-primary); }
 
-  /* Progress */
   .progress-wrap { margin-bottom: 24px; }
   .progress-info {
     display: flex; justify-content: space-between;
@@ -364,17 +329,14 @@ const scopedCSS = `
     transition: width 0.5s cubic-bezier(0.22,1,0.36,1);
   }
 
-  /* Question card inner */
   .question-label {
     text-align: center; font-size: 0.85rem;
     color: var(--text-muted); margin-bottom: 20px;
   }
-
   .audio-area {
     display: flex; flex-direction: column;
     align-items: center; margin-bottom: 28px;
   }
-
   .play-btn {
     width: 96px; height: 96px; border-radius: 50%;
     border: 2px solid var(--accent);
@@ -406,7 +368,6 @@ const scopedCSS = `
     margin-top: 12px; font-size: 0.82rem; color: var(--text-muted);
   }
 
-  /* Choices */
   .choices {
     display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
   }
@@ -417,7 +378,10 @@ const scopedCSS = `
     padding: 16px 12px; cursor: pointer;
     text-align: center; transition: all 0.2s ease;
     font-family: inherit; color: var(--text-primary);
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
   }
+  .choice-btn:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
   .choice-btn:hover:not(.disabled) {
     border-color: var(--accent);
     background: var(--accent-glow);
@@ -437,52 +401,64 @@ const scopedCSS = `
   .choice-btn.disabled { cursor: default; opacity: 0.55; }
   .choice-btn.correct.disabled, .choice-btn.incorrect.disabled { opacity: 1; }
 
-  /* Report */
-  .score-ring {
-    width: 120px; height: 120px; border-radius: 50%;
-    margin: 0 auto 16px; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; position: relative;
+  /* Score screen */
+  .score-card {
+    text-align: center;
+    padding: 24px 16px 28px;
+    margin-bottom: 18px;
   }
-  .score-ring::before {
-    content: ''; position: absolute; inset: 0; border-radius: 50%; padding: 4px;
-    background: conic-gradient(var(--accent) calc(var(--pct) * 3.6deg), var(--card-border) 0);
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #fff calc(100% - 3px));
-    mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #fff calc(100% - 3px));
+  .score-headline { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); margin-bottom: 8px; }
+  .score-big {
+    font-size: 3.2rem; font-weight: 700;
+    background: linear-gradient(135deg, #f1f5f9 30%, #38bdf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1; margin-bottom: 8px;
   }
-  .score-num { font-size: 2.2rem; font-weight: 700; line-height: 1; }
-  .score-label { font-size: 0.78rem; color: var(--text-secondary); }
+  .score-sub { color: var(--text-secondary); font-size: 0.92rem; line-height: 1.5; }
 
-  .section-head {
-    font-size: 0.85rem; text-transform: uppercase;
-    letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 16px;
+  .next-challenge {
+    margin-top: 22px;
   }
-
-  .tone-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-  .tone-row:last-child { margin-bottom: 0; }
-  .tone-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-  .tone-row-label { flex: 0 0 110px; font-size: 0.85rem; color: var(--text-secondary); }
-  .tone-bar-track { flex: 1; height: 8px; background: var(--surface); border-radius: 4px; overflow: hidden; }
-  .tone-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(0.22,1,0.36,1); }
-  .tone-row-pct { flex: 0 0 36px; text-align: right; font-size: 0.82rem; font-weight: 600; }
-
-  .detail-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 0; border-bottom: 1px solid var(--card-border); font-size: 0.88rem;
+  .next-challenge-head {
+    text-align: center; font-size: 0.92rem; font-weight: 600;
+    color: var(--text-primary); margin-bottom: 10px;
   }
-  .detail-item:last-child { border-bottom: none; }
-  .detail-icon { flex-shrink: 0; font-size: 1rem; }
-  .detail-qn { flex: 0 0 24px; color: var(--text-muted); font-size: 0.78rem; }
-  .detail-pinyin { flex: 1; font-weight: 600; }
-  .detail-time { flex: 0 0 36px; text-align: right; color: var(--text-muted); font-size: 0.78rem; }
+  .next-challenge-btn {
+    width: 100%;
+    display: flex; align-items: center; gap: 14px;
+    background: linear-gradient(135deg, rgba(56,189,248,0.15), rgba(129,140,248,0.15));
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    cursor: pointer; font-family: inherit;
+    color: var(--text-primary);
+    transition: all 0.2s;
+  }
+  .next-challenge-btn:hover {
+    background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(129,140,248,0.25));
+    transform: translateY(-1px);
+  }
+  .next-challenge-icon { font-size: 1.8rem; flex-shrink: 0; }
+  .next-challenge-body { flex: 1; text-align: left; }
+  .next-challenge-title { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
+  .next-challenge-sub { font-size: 0.8rem; color: var(--text-secondary); }
+  .next-challenge-arrow { font-size: 1.3rem; color: var(--accent); flex-shrink: 0; }
 
-  .report-actions { display: flex; gap: 12px; }
+  .retake-row {
+    margin-top: 22px; text-align: center;
+  }
+  .retake-prompt {
+    color: var(--text-muted); font-size: 0.82rem;
+    margin-bottom: 10px; line-height: 1.5;
+  }
 
   @media (max-width: 480px) {
     .choices { gap: 10px; }
     .choice-btn { padding: 14px 8px; }
     .choice-pinyin { font-size: 1.15rem; }
     .play-btn { width: 80px; height: 80px; }
-    .report-actions { flex-direction: column; }
-    .tone-row-label { flex: 0 0 90px; }
+    .score-big { font-size: 2.6rem; }
   }
 `
