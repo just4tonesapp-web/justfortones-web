@@ -1,11 +1,10 @@
 // ═══════════════════════════════════════
-// Test C – Tone Pronunciation Test (12 items)
-// User sees character + pinyin, records voice,
-// pitch contour is analyzed against target tone.
+// Test C – Tone Pronunciation Test (8 items, 2 per tone)
+// Pure production: user sees character + pinyin and reads it aloud — no audio
+// example to mimic. The recorded pitch contour is analyzed against the target.
 // ═══════════════════════════════════════
 import { navigate } from '../router.js'
 import { applyTone, shuffle } from '../utils/pinyin.js'
-import { playSyllable } from '../utils/audio.js'
 import { AudioEngine } from '../utils/audioEngine.js'
 import { toneDetector } from '../utils/toneDetector.js'
 import { supabase } from '../supabaseClient.js'
@@ -18,8 +17,8 @@ import {
 // WebSpeech disabled: coi-serviceworker's COOP header blocks Web Speech API
 // import { isWebSpeechAvailable, startWebSpeech, stopWebSpeech } from '../utils/models/webSpeechModel.js'
 
-const TOTAL = 12
-const PASS_SCORE = 7
+const TOTAL = 8
+const PASS_SCORE = 5
 
 const JUDGE_PERSONAS = {
   azure:      { emoji: '🎯', name: 'Azure' },
@@ -62,6 +61,47 @@ const CHAR_POOL = [
   { char: '饭', base: 'fan', tone: 4, meaning: 'rice' },
   { char: '看', base: 'kan', tone: 4, meaning: 'look' },
   { char: '月', base: 'yue', tone: 4, meaning: 'moon' },
+
+  // ── Extra pool so questions don't repeat (15 per tone) ──
+  { char: '三', base: 'san', tone: 1, meaning: 'three' },
+  { char: '七', base: 'qi', tone: 1, meaning: 'seven' },
+  { char: '八', base: 'ba', tone: 1, meaning: 'eight' },
+  { char: '鸡', base: 'ji', tone: 1, meaning: 'chicken' },
+  { char: '高', base: 'gao', tone: 1, meaning: 'tall' },
+  { char: '飞', base: 'fei', tone: 1, meaning: 'fly' },
+  { char: '开', base: 'kai', tone: 1, meaning: 'open' },
+  { char: '说', base: 'shuo', tone: 1, meaning: 'speak' },
+  { char: '听', base: 'ting', tone: 1, meaning: 'listen' },
+
+  { char: '十', base: 'shi', tone: 2, meaning: 'ten' },
+  { char: '钱', base: 'qian', tone: 2, meaning: 'money' },
+  { char: '牛', base: 'niu', tone: 2, meaning: 'cow' },
+  { char: '门', base: 'men', tone: 2, meaning: 'door' },
+  { char: '国', base: 'guo', tone: 2, meaning: 'country' },
+  { char: '白', base: 'bai', tone: 2, meaning: 'white' },
+  { char: '头', base: 'tou', tone: 2, meaning: 'head' },
+  { char: '龙', base: 'long', tone: 2, meaning: 'dragon' },
+  { char: '王', base: 'wang', tone: 2, meaning: 'king' },
+
+  { char: '五', base: 'wu', tone: 3, meaning: 'five' },
+  { char: '九', base: 'jiu', tone: 3, meaning: 'nine' },
+  { char: '我', base: 'wo', tone: 3, meaning: 'I' },
+  { char: '手', base: 'shou', tone: 3, meaning: 'hand' },
+  { char: '米', base: 'mi', tone: 3, meaning: 'rice (grain)' },
+  { char: '老', base: 'lao', tone: 3, meaning: 'old' },
+  { char: '雨', base: 'yu', tone: 3, meaning: 'rain' },
+  { char: '火', base: 'huo', tone: 3, meaning: 'fire' },
+  { char: '草', base: 'cao', tone: 3, meaning: 'grass' },
+
+  { char: '二', base: 'er', tone: 4, meaning: 'two' },
+  { char: '六', base: 'liu', tone: 4, meaning: 'six' },
+  { char: '树', base: 'shu', tone: 4, meaning: 'tree' },
+  { char: '笑', base: 'xiao', tone: 4, meaning: 'laugh' },
+  { char: '电', base: 'dian', tone: 4, meaning: 'electric' },
+  { char: '爱', base: 'ai', tone: 4, meaning: 'love' },
+  { char: '路', base: 'lu', tone: 4, meaning: 'road' },
+  { char: '菜', base: 'cai', tone: 4, meaning: 'vegetable' },
+  { char: '快', base: 'kuai', tone: 4, meaning: 'fast' },
 ]
 
 export function testCView(container, { debug = false } = {}) {
@@ -111,14 +151,14 @@ export function testCView(container, { debug = false } = {}) {
   let previousChars = new Set()
 
   function generate() {
-    // Pick 3 per tone, total 12 — preferring chars not used in the previous attempt.
+    // Pick 2 per tone, total 8 — preferring chars not used in the previous attempt.
     const byTone = { 1: [], 2: [], 3: [], 4: [] }
     CHAR_POOL.forEach(c => byTone[c.tone].push(c))
     const picked = []
     for (let t = 1; t <= 4; t++) {
       const fresh = byTone[t].filter(c => !previousChars.has(c.char))
-      const pool = fresh.length >= 3 ? fresh : byTone[t]
-      picked.push(...shuffle(pool).slice(0, 3))
+      const pool = fresh.length >= 2 ? fresh : byTone[t]
+      picked.push(...shuffle(pool).slice(0, 2))
     }
     questions = shuffle(picked)
     previousChars = new Set(questions.map(q => q.char))
@@ -126,39 +166,27 @@ export function testCView(container, { debug = false } = {}) {
 
   // ── Mount ──
   container.innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell shell-top-center">
       <div class="back-row">
-        <button class="back-home-btn" id="tc-home">← Home</button>
+        <button class="app-logo" id="tc-home">Just4Tones</button>
       </div>
       <div class="tc-header">
-        <span class="badge">Diagnostic Step 2</span>
-        <h1>Test C — Pronunciation</h1>
-        <p>Can you pronounce the four tones?</p>
+        <h1><span class="title-badge">3</span>Speaking — 1-Syllable Words</h1>
       </div>
 
-      <!-- Intro -->
+      <!-- Intro (slide 17) -->
       <div id="tc-intro" class="card animate-in text-center">
-        <div style="font-size:3rem;margin-bottom:16px">🎤</div>
-        <h2>Speak the tones!</h2>
-        <p style="color:var(--text-secondary);margin:12px 0;line-height:1.6">
-          You'll see 12 characters with their pinyin.<br>
-          Listen to the example, then record yourself saying it.<br>
-          We'll analyze your pitch contour to see if your tone matches.
+        <p class="intro-copy">
+          You'll see 8 single-syllable words. Read each one aloud and we'll
+          check your tone — there's no example to copy, just your own pronunciation.
         </p>
-        <div class="intro-rules">
-          <strong>How it works:</strong><br>
-          — Tap 🔊 to hear the correct pronunciation<br>
-          — Tap 🎤 to record yourself (3 seconds max)<br>
-          — Your pitch contour is compared to the target tone<br>
-          — Score ${PASS_SCORE}+ out of 12 to pass ✓
-        </div>
-        <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:8px">
+        <p style="color:var(--text-muted);font-size:0.78rem;margin-bottom:8px">
           ⚠️ Allow microphone access when prompted
         </p>
-        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.75rem;margin-bottom:16px;${debug ? '' : 'display:none'}">
+        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.72rem;margin-bottom:16px;${debug ? '' : 'display:none'}">
           Loading AI models…
         </p>
-        <button class="btn btn-primary btn-lg" id="tc-start">Start Test C</button>
+        <button class="btn btn-primary btn-lg" id="tc-start">START NOW</button>
       </div>
 
       <!-- Quiz -->
@@ -180,13 +208,6 @@ export function testCView(container, { debug = false } = {}) {
             <div class="tc-big-char" id="tc-char">小</div>
             <div class="tc-pinyin" id="tc-pinyin">xiǎo</div>
             <div class="tc-meaning" id="tc-meaning">small</div>
-          </div>
-
-          <!-- Listen button -->
-          <div class="tc-listen-row">
-            <button class="tc-listen-btn" id="tc-listen">
-              🔊 Listen to example
-            </button>
           </div>
 
           <!-- Record section -->
@@ -231,7 +252,6 @@ export function testCView(container, { debug = false } = {}) {
             </div>
             <div class="tc-result-actions" id="tc-result-actions">
               <button class="btn btn-secondary hidden" id="tc-retry-q">🎤 Practice Again</button>
-              <button class="btn btn-secondary hidden" id="tc-listen-result">🔊 Listen</button>
               <button class="btn btn-primary" id="tc-next">Next →</button>
             </div>
           </div>
@@ -251,9 +271,7 @@ export function testCView(container, { debug = false } = {}) {
   const $ = (id) => document.getElementById(id)
   $('tc-home').addEventListener('click', () => navigate('/'))
   $('tc-start').addEventListener('click', startTest)
-  $('tc-listen').addEventListener('click', listenExample)
   $('tc-next').addEventListener('click', nextQuestion)
-  $('tc-listen-result').addEventListener('click', listenExample)
   $('tc-retry-q').addEventListener('click', retryQuestion)
 
   // Accuracy logger — user confirms if ensemble was right or wrong
@@ -320,6 +338,8 @@ export function testCView(container, { debug = false } = {}) {
   function startTest() {
     generate()
     currentQ = 0; score = 0; answers = []; testStart = Date.now()
+    container.querySelector('.back-row')?.classList.remove('hidden')
+    container.querySelector('.tc-header')?.classList.remove('hidden')
     $('tc-intro').classList.add('hidden')
     $('tc-quiz').classList.remove('hidden')
     $('tc-report').classList.add('hidden')
@@ -351,28 +371,15 @@ export function testCView(container, { debug = false } = {}) {
     $('tc-judges-wrap').classList.add('hidden')
     $('tc-confirm-wrap').classList.add('hidden')
     $('tc-retry-q').classList.add('hidden')
-    $('tc-listen-result').classList.add('hidden')
     const coachEl = document.getElementById('tc-coach-msg')
     if (coachEl) coachEl.style.display = 'none'
     pendingLogEntry = null
-    $('tc-listen').disabled = false
 
     // Re-animate
     const card = $('tc-card')
     card.style.animation = 'none'
     card.offsetHeight
     card.style.animation = 'cardIn 0.4s ease-out'
-  }
-
-  function listenExample() {
-    const q = questions[currentQ]
-    const btn = $('tc-listen')
-    btn.textContent = '🔊 Playing…'
-    btn.disabled = true
-    playSyllable(q.base, q.tone, () => {
-      btn.textContent = '🔊 Listen again'
-      btn.disabled = false
-    })
   }
 
   async function startRecording() {
@@ -390,7 +397,6 @@ export function testCView(container, { debug = false } = {}) {
     $('tc-rec-icon').textContent = '🎤'
     $('tc-rec-status').textContent = 'Speak now!'
     $('tc-record').classList.add('recording')
-    $('tc-listen').disabled = true
 
     // Level meter + silence detection
     levelInterval = setInterval(() => {
@@ -422,10 +428,13 @@ export function testCView(container, { debug = false } = {}) {
     const recording = engine.stop()
     isRecording = false
 
-    $('tc-rec-label').textContent = 'Analyzing…'
-    $('tc-rec-icon').textContent = '⏳'
-    $('tc-rec-status').textContent = `Using ${toneDetector.activeModels.length} model(s)…`
+    // Detection runs several models (and cloud judges) — it can take a moment,
+    // so show an animated spinner rather than a frozen-looking hourglass.
+    $('tc-rec-icon').innerHTML = '<span class="tc-mini-spinner"></span>'
+    $('tc-rec-label').textContent = 'Detecting your tone…'
+    $('tc-rec-status').textContent = 'Just a moment…'
     $('tc-record').classList.remove('recording')
+    $('tc-record').classList.add('analyzing')
     $('tc-record').disabled = true
     $('tc-level-bar').style.width = '0%'
 
@@ -556,13 +565,12 @@ export function testCView(container, { debug = false } = {}) {
 
     // Show appropriate action buttons
     if (passed) {
-      $('tc-listen-result').classList.remove('hidden')
       $('tc-retry-q').classList.add('hidden')
     } else {
       $('tc-retry-q').classList.remove('hidden')
-      $('tc-listen-result').classList.add('hidden')
     }
 
+    $('tc-record').classList.remove('analyzing')
     $('tc-rec-label').textContent = 'Done'
     $('tc-rec-icon').textContent = passed ? '✓' : '✗'
     $('tc-rec-status').textContent = passed ? 'Correct!' : 'Not quite'
@@ -577,11 +585,11 @@ export function testCView(container, { debug = false } = {}) {
     $('tc-confirm-wrap').classList.add('hidden')
     const coachEl = document.getElementById('tc-coach-msg')
     if (coachEl) coachEl.style.display = 'none'
+    $('tc-record').classList.remove('analyzing')
     $('tc-rec-label').textContent = 'Tap to Record'
     $('tc-rec-icon').textContent = '🎤'
     $('tc-rec-status').textContent = 'Try again!'
     $('tc-record').disabled = false
-    $('tc-listen').disabled = false
     pendingLogEntry = null
     // Revert score if the wrong answer was already counted
     const lastAnswer = answers[answers.length - 1]
@@ -712,10 +720,11 @@ export function testCView(container, { debug = false } = {}) {
   // ── Report (accordion-style score screen, slide 18) ──
   function showReport() {
     $('tc-quiz').classList.add('hidden')
+    container.querySelector('.back-row')?.classList.add('hidden')
+    container.querySelector('.tc-header')?.classList.add('hidden')
     const el = $('tc-report')
     el.classList.remove('hidden')
 
-    const passed = score >= PASS_SCORE
     saveResult('C', score, TOTAL, { answers })
 
     // Map this test's per-q field (`passed`) to the shared analyzer's `correct`.
@@ -725,57 +734,40 @@ export function testCView(container, { debug = false } = {}) {
       analysis, score, total: TOTAL,
       testLabel: 'Test 3 · Speaking 1-syllable',
       shape: 'single',
+      skill: 'speaking',
+      showSummary: false, // score already shown in the headline above
     })
 
     el.innerHTML = `
-      <div class="app-shell animate-in">
-        <div class="score-card">
-          <div class="score-headline">🎯 You scored</div>
-          <div class="score-big">${score}/${TOTAL}</div>
-          <div class="score-sub">
-            ${passed
-              ? `Great Job! Incredible! You nailed it!`
-              : `Fluctuation in performance when producing foreign sounds is totally expected.`}
+      <div class="result-shell animate-in">
+        <button class="app-logo" id="tc-logo">Just4Tones</button>
+
+        <div class="result-scorecard">
+          <div class="rs-score">
+            <span class="rs-score-label">You scored</span>
+            <span class="rs-score-value">${score}/${TOTAL}</span>
           </div>
+          <div class="rs-divider"></div>
+          <div class="tr-report-head">Your REPORT</div>
+          ${reportInner.html}
         </div>
 
-        <div class="tr-accordion">
-          <button class="tr-accordion-head" type="button">
-            <div class="tr-accordion-head-text">
-              <div class="tr-accordion-head-title">📊 Open your Report</div>
-              <div class="tr-accordion-head-sub">Tap to see per-tone breakdown & recommendations</div>
-            </div>
-            <div class="tr-accordion-chevron">▾</div>
-          </button>
-          <div class="tr-accordion-body">
-            <div class="tr-accordion-body-inner">
-              ${reportInner.html}
-            </div>
-          </div>
-        </div>
+        <button class="result-next result-next-final" id="tc-finish">
+          <div class="result-next-head">REPORT</div>
+          <div class="result-next-title">Get your full report</div>
+        </button>
 
-        <div class="next-challenge-c">
-          <div class="next-challenge-head-c">Final Challenge: speak two-syllable words</div>
-          <button class="next-challenge-btn-c" id="tc-next">
-            <div class="next-challenge-icon-c">4️⃣</div>
-            <div class="next-challenge-body-c">
-              <div class="next-challenge-title-c">Speaking — 2-Syllable Words</div>
-              <div class="next-challenge-sub-c">12 questions · last step</div>
-            </div>
-            <div class="next-challenge-arrow-c">→</div>
-          </button>
-        </div>
-
-        <div class="retake-row-c">
-          <p class="retake-prompt-c">Do you want to take this test again? Fluctuation in performance is totally expected.</p>
-          <button class="btn btn-secondary" id="tc-retry">🔄 Test Again</button>
-        </div>
+        <p class="result-retake">
+          Do you want to take that test again? Fluctuation in performance in speaking foreign sounds is totally expected.
+          <button class="result-retake-link" id="tc-retry">Test Again</button>
+        </p>
       </div>
     `
 
     bindAccordion(el)
+    document.getElementById('tc-logo').addEventListener('click', () => navigate('/'))
     document.getElementById('tc-retry').addEventListener('click', startTest)
-    document.getElementById('tc-next').addEventListener('click', () => navigate('/test-d'))
+    document.getElementById('tc-finish').addEventListener('click', () => navigate('/report'))
   }
 
   // Cleanup on unmount
@@ -796,18 +788,16 @@ const scopedCSS = `
     margin-bottom: 28px;
   }
   .tc-header h1 {
-    font-size: 1.65rem; font-weight: 700; margin: 10px 0 6px;
+    font-size: 1.55rem; font-weight: 700; margin: 0;
     background: linear-gradient(135deg, #f1f5f9 30%, #38bdf8);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
-  .tc-header p { color: var(--text-secondary); font-size: 0.95rem; }
-
-  .intro-rules {
-    text-align: left; background: var(--surface); border-radius: var(--radius-sm);
-    padding: 16px 20px; margin: 20px 0; font-size: 0.85rem;
-    color: var(--text-secondary); line-height: 1.7;
+  .intro-copy {
+    color: var(--text-primary);
+    font-size: 1rem;
+    line-height: 1.65;
+    margin: 0 0 16px;
   }
-  .intro-rules strong { color: var(--text-primary); }
 
   .progress-wrap { margin-bottom: 24px; }
   .progress-info { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 8px; }
@@ -838,27 +828,6 @@ const scopedCSS = `
     color: var(--text-muted);
     margin-top: 4px;
   }
-
-  /* Listen button */
-  .tc-listen-row {
-    display: flex; justify-content: center; margin-bottom: 20px;
-  }
-  .tc-listen-btn {
-    background: var(--surface);
-    border: 1px solid var(--card-border);
-    color: var(--text-primary);
-    padding: 10px 20px;
-    border-radius: 24px;
-    font-family: inherit;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .tc-listen-btn:hover:not(:disabled) {
-    border-color: var(--accent);
-    background: var(--accent-glow);
-  }
-  .tc-listen-btn:disabled { opacity: 0.5; cursor: default; }
 
   /* Record section */
   .tc-record-section {
@@ -895,6 +864,21 @@ const scopedCSS = `
     background: var(--incorrect-bg);
     animation: pulse-ring 1.5s ease-out infinite;
   }
+  /* Detection in progress — accent ring + spinner (see .tc-mini-spinner). */
+  .tc-record-btn.analyzing {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+    opacity: 1;
+  }
+  .tc-mini-spinner {
+    display: inline-block;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: 3px solid var(--card-border);
+    border-top-color: var(--accent);
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .tc-record-icon { font-size: 2.2rem; }
   #tc-rec-label { font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); }
 
@@ -1040,56 +1024,88 @@ const scopedCSS = `
     .tc-judge-card { min-width: 62px; padding: 8px 8px; }
   }
 `
-// ── New score-screen styles (slides 18, 6) ──
+// ── Result screen styles (slide 18) ──
 const tcExtraCSS = `
-  .score-card {
-    text-align: center;
-    padding: 24px 16px 28px;
-    margin-bottom: 18px;
+  .result-scorecard {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 22px;
   }
-  .score-headline { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); margin-bottom: 8px; }
-  .score-big {
-    font-size: 3.2rem; font-weight: 700;
+  .rs-score { text-align: center; padding: 28px 20px 22px; }
+  .rs-score-label {
+    display: block; font-size: 0.8rem;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--accent); margin-bottom: 10px;
+  }
+  .rs-score-value {
+    display: block; font-size: 3.2rem; font-weight: 700; line-height: 1;
     background: linear-gradient(135deg, #f1f5f9 30%, #38bdf8);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    line-height: 1; margin-bottom: 8px;
   }
-  .score-sub { color: var(--text-secondary); font-size: 0.92rem; line-height: 1.5; }
+  .rs-divider { height: 1px; background: var(--card-border); }
+  .rs-acc {
+    border: none !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+  }
 
-  .next-challenge-c { margin-top: 22px; }
-  .next-challenge-head-c {
-    text-align: center; font-size: 0.92rem; font-weight: 600;
-    color: var(--text-primary); margin-bottom: 10px;
-  }
-  .next-challenge-btn-c {
+  .result-next {
     width: 100%;
-    display: flex; align-items: center; gap: 14px;
-    background: linear-gradient(135deg, rgba(56,189,248,0.15), rgba(129,140,248,0.15));
+    display: block; text-align: center;
+    background: linear-gradient(135deg, rgba(56,189,248,0.12), rgba(129,140,248,0.12));
     border: 1px solid var(--accent);
     border-radius: var(--radius);
-    padding: 16px 18px;
+    padding: 20px 18px;
     cursor: pointer; font-family: inherit;
     color: var(--text-primary);
     transition: all 0.2s;
+    margin-bottom: 24px;
   }
-  .next-challenge-btn-c:hover {
-    background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(129,140,248,0.25));
+  .result-next:hover {
+    background: linear-gradient(135deg, rgba(56,189,248,0.22), rgba(129,140,248,0.22));
     transform: translateY(-1px);
   }
-  .next-challenge-icon-c { font-size: 1.8rem; flex-shrink: 0; }
-  .next-challenge-body-c { flex: 1; text-align: left; }
-  .next-challenge-title-c { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
-  .next-challenge-sub-c { font-size: 0.8rem; color: var(--text-secondary); }
-  .next-challenge-arrow-c { font-size: 1.3rem; color: var(--accent); flex-shrink: 0; }
-
-  .retake-row-c { margin-top: 22px; text-align: center; }
-  .retake-prompt-c {
-    color: var(--text-muted); font-size: 0.82rem;
-    margin-bottom: 10px; line-height: 1.5;
+  .result-next-head {
+    font-size: 0.95rem; font-weight: 700;
+    color: var(--accent); margin-bottom: 6px;
   }
+  .result-next-title { font-size: 1.15rem; font-weight: 600; }
+
+  /* Final test → composite report: green "you finished" accent. */
+  .result-next-final {
+    background: linear-gradient(135deg, rgba(74,222,128,0.18), rgba(56,189,248,0.18));
+    border-color: var(--correct);
+  }
+  .result-next-final:hover {
+    background: linear-gradient(135deg, rgba(74,222,128,0.28), rgba(56,189,248,0.28));
+  }
+  .result-next-final .result-next-head { color: var(--correct); }
+
+  .result-retake {
+    text-align: center;
+    font-style: italic;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0 8px;
+  }
+  .result-retake-link {
+    background: none; border: none; padding: 0; margin-left: 4px;
+    font-family: inherit; font-size: 0.85rem;
+    font-style: italic; font-weight: 700;
+    color: var(--text-primary);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .result-retake-link:hover { color: var(--accent); }
+
   @media (max-width: 480px) {
-    .score-big { font-size: 2.6rem; }
+    .rs-score-value { font-size: 2.6rem; }
   }
 `

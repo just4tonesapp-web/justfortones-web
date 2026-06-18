@@ -56,11 +56,15 @@ function toneVowelIndex(syl) {
  * e.g. applyTone('bao', 3) → 'bǎo'
  */
 export function applyTone(syllable, tone) {
-  const idx = toneVowelIndex(syllable)
-  if (idx === -1) return syllable
-  const marks = TONE_MARKS[syllable[idx]]
-  if (!marks) return syllable
-  return syllable.substring(0, idx) + marks[tone - 1] + syllable.substring(idx + 1)
+  // 'v' is the ASCII stand-in for 'ü' in our syllable keys (lv→lü, nv→nü,
+  // lve→lüe). Normalise to 'ü' for display — the original 'v' keys are kept for
+  // audio-file lookup, so only the rendered text is converted here.
+  const s = syllable.replace(/v/g, 'ü')
+  const idx = toneVowelIndex(s)
+  if (idx === -1) return s
+  const marks = TONE_MARKS[s[idx]]
+  if (!marks) return s
+  return s.substring(0, idx) + marks[tone - 1] + s.substring(idx + 1)
 }
 
 /**
@@ -90,7 +94,7 @@ export function formatTwoSyllable(item) {
  * Format a two-syllable item as bare pinyin (no tones).
  */
 export function formatTwoSyllableBare(item) {
-  return item.syl1 + item.syl2
+  return (item.syl1 + item.syl2).replace(/v/g, 'ü')
 }
 
 /**
@@ -105,10 +109,10 @@ const SYLLABLE_TTS_CHAR = {
   'ao':   ['凹','熬','袄','奥'],
   'ba':   ['巴','拔','把','爸'],
   'bai':  ['掰','白','摆','拜'],
-  'ban':  ['班','办','板','半'],
+  'ban':  ['班',null,'板','半'],
   'bang': ['帮',null,'榜','棒'],
   'bao':  ['包','雹','宝','报'],
-  'bei':  ['杯','北',null,'背'],
+  'bei':  ['杯',null,'北','背'],
   'ben':  ['奔',null,'本','笨'],
   'beng': ['崩',null,null,'蹦'],
   'bi':   ['逼','鼻','比','必'],
@@ -143,7 +147,7 @@ const SYLLABLE_TTS_CHAR = {
   'cun':  ['村',null,'寸',null],
   'cuo':  ['搓',null,null,'错'],
   'da':   ['搭','达','打','大'],
-  'dai':  ['呆','抬','待','带'],
+  'dai':  ['呆',null,'待','带'],
   'dan':  ['单','担','胆','但'],
   'dang': ['当',null,'党','当'],
   'dao':  ['刀',null,'倒','道'],
@@ -214,7 +218,7 @@ const SYLLABLE_TTS_CHAR = {
   'ju':   ['居',null,'举','句'],
   'jue':  ['觉',null,null,'决'],
   'jun':  ['军',null,null,'俊'],
-  'ka':   ['卡',null,null,'卡'],
+  'ka':   ['卡',null,'卡',null],
   'kai':  ['开',null,null,'慨'],
   'kan':  ['刊',null,'坎','看'],
   'kang': ['康',null,null,'抗'],
@@ -229,7 +233,7 @@ const SYLLABLE_TTS_CHAR = {
   'la':   ['拉',null,null,'辣'],
   'lai':  ['来',null,null,'赖'],
   'lan':  ['兰',null,'懒','烂'],
-  'lang': ['朗',null,'朗',null],
+  'lang': [null,null,'朗',null],
   'lao':  ['捞',null,'老','涝'],
   'le':   ['勒',null,null,'乐'],
   'lei':  ['雷',null,null,'泪'],
@@ -268,7 +272,7 @@ const SYLLABLE_TTS_CHAR = {
   'ni':   ['泥',null,'你','逆'],
   'nian': ['年',null,'碾','念'],
   'niang':['娘',null,null,null],
-  'ning': ['宁',null,'宁',null],
+  'ning': [null,null,'宁',null],
   'niu':  ['牛',null,'纽',null],
   'nong': [null,'农',null,'弄'],
   'nuo':  ['挪',null,null,'诺'],

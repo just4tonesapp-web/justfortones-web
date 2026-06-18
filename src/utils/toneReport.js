@@ -116,7 +116,7 @@ function summarize(perTone, subject) {
 // Build the report HTML
 //   shape:  'single' | 'disyl'
 // ═══════════════════════════════════════════════════════════════════
-export function buildReportHTML({ analysis, score, total, testLabel, shape }) {
+export function buildReportHTML({ analysis, score, total, testLabel, shape, showSummary = true, skill = 'recognizing' }) {
   const subject = shape === 'disyl' ? '2-syllable words containing the' : ''
   const subjectShort = shape === 'disyl' ? 'words' : 'tones'
 
@@ -125,15 +125,13 @@ export function buildReportHTML({ analysis, score, total, testLabel, shape }) {
   for (let t = 1; t <= 4; t++) {
     const p = analysis.perTone[t]
     const pct = shape === 'disyl' ? p.pct : Math.round(p.ratio * 100)
-    const numLabel = shape === 'disyl'
-      ? `${p.correct}/${p.total}`
-      : `${p.correct}/${p.total} → ${p.band}`
+    const numLabel = `${p.correct}/${p.total}`
     rows += `
       <div class="tr-row">
-        <div class="tr-dot" style="background:${TONE_COLOR[t]}"></div>
+        <div class="tr-dot"></div>
         <div class="tr-label">${TONE_NAMES[t]}</div>
-        <div class="tr-bar"><div class="tr-bar-fill" style="width:${pct}%;background:${TONE_COLOR[t]}"></div></div>
-        <div class="tr-pct" style="color:${TONE_COLOR[t]}">${pct}%</div>
+        <div class="tr-bar"><div class="tr-bar-fill" style="width:${pct}%"></div></div>
+        <div class="tr-pct">${pct}%</div>
         <div class="tr-num">${numLabel}</div>
       </div>`
   }
@@ -141,16 +139,16 @@ export function buildReportHTML({ analysis, score, total, testLabel, shape }) {
   // Feedback paragraphs.
   let feedback = ''
   if (analysis.isPerfect) {
-    feedback += `<p class="tr-line tr-bravo">You are really good at recognizing/speaking all four tones. Bravo!</p>`
+    feedback += `<p class="tr-line tr-bravo">You are really good at ${skill} all four tones. Bravo!</p>`
     feedback += `<p class="tr-line tr-bravo">Are you a native speaker? 👀</p>`
   } else {
     if (analysis.bravoTones.length) {
       const names = analysis.bravoTones.map(t => TONE_SHORT[t]).join(', ')
-      feedback += `<p class="tr-line tr-bravo">✨ You are really good at ${shape === 'disyl' ? 'recognizing ' + subject + ' ' : 'the '}${names} tone${analysis.bravoTones.length > 1 ? 's' : ''}. Bravo!</p>`
+      feedback += `<p class="tr-line tr-bravo">✨ You are really good at ${skill} ${shape === 'disyl' ? subject + ' ' : 'the '}${names} tone${analysis.bravoTones.length > 1 ? 's' : ''}. Bravo!</p>`
     }
     if (analysis.nascentTones.length) {
       const names = analysis.nascentTones.map(t => TONE_SHORT[t]).join(', ')
-      feedback += `<p class="tr-line tr-nascent">🌱 You demonstrate nascent ability with ${shape === 'disyl' ? subject + ' ' : 'the '}${names} tone${analysis.nascentTones.length > 1 ? 's' : ''}.</p>`
+      feedback += `<p class="tr-line tr-nascent">🌱 You demonstrate nascent ability in ${skill} ${shape === 'disyl' ? subject + ' ' : 'the '}${names} tone${analysis.nascentTones.length > 1 ? 's' : ''}.</p>`
     }
     if (analysis.workTones.length) {
       const names = analysis.workTones.map(t => TONE_SHORT[t]).join(', ')
@@ -165,15 +163,14 @@ export function buildReportHTML({ analysis, score, total, testLabel, shape }) {
     recommendation = `
       <div class="tr-reco">
         <div class="tr-reco-head">🎯 Our recommendation</div>
-        <p>Focus on the <strong style="color:${TONE_COLOR[rt]}">${TONE_NAMES[rt]}</strong> first${shape === 'disyl' ? ' in 2-syllable words' : ''}, because of its natural distribution in Chinese. You will see huge gains immediately.</p>
+        <p>Focus on the <strong style="color:var(--accent)">${TONE_NAMES[rt]}</strong> first${shape === 'disyl' ? ' in 2-syllable words' : ''}, because of its natural distribution in Chinese. You will see huge gains immediately.</p>
         <p class="tr-feature">${TONE_FEATURE[rt]}</p>
       </div>`
   }
 
   const pct = Math.round((score / total) * 100)
 
-  const html = `
-    <div class="tr-card">
+  const summary = showSummary ? `
       <div class="tr-summary">
         <div class="tr-score-ring" style="--pct:${pct}">
           <span class="tr-score-num">${score}/${total}</span>
@@ -183,13 +180,27 @@ export function buildReportHTML({ analysis, score, total, testLabel, shape }) {
           <div class="tr-test-label">${testLabel}</div>
           <div class="tr-summary-sub">Correctness distribution by tone</div>
         </div>
-      </div>
+      </div>` : ''
 
-      <div class="tr-rows">${rows}</div>
+  // Progressive disclosure: reveal the per-tone feedback first (the teaser the
+  // user actually cares about), and keep the distribution chart + recommendation
+  // behind a salient "Open full report" toggle. Native <details> → no JS wiring.
+  const html = `
+    <div class="tr-card">
+      ${summary}
 
       <div class="tr-feedback">${feedback}</div>
 
-      ${recommendation}
+      <details class="tr-more">
+        <summary class="tr-more-summary">
+          <span>Open full report to view recommendation</span>
+          <span class="tr-more-chevron">▾</span>
+        </summary>
+        <div class="tr-more-body">
+          <div class="tr-rows">${rows}</div>
+          ${recommendation}
+        </div>
+      </details>
     </div>
   `
 
@@ -230,21 +241,29 @@ export const TONE_REPORT_CSS = `
   .tr-rows { margin-bottom: 18px; }
   .tr-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .tr-row:last-child { margin-bottom: 0; }
-  .tr-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  /* Distribution rows are monochrome (no per-tone colour) — the labels already
+     name each tone, so the chart reads clean and premium rather than rainbow. */
+  .tr-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--text-muted); }
   .tr-label { flex: 0 0 150px; font-size: 0.82rem; color: var(--text-secondary); }
   .tr-bar { flex: 1; height: 8px; background: var(--surface); border-radius: 4px; overflow: hidden; }
-  .tr-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(0.22,1,0.36,1); }
-  .tr-pct { flex: 0 0 40px; text-align: right; font-size: 0.82rem; font-weight: 600; }
+  .tr-bar-fill { height: 100%; border-radius: 4px; background: var(--text-secondary); transition: width 0.6s cubic-bezier(0.22,1,0.36,1); }
+  .tr-pct { flex: 0 0 40px; text-align: right; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); }
   .tr-num { flex: 0 0 64px; text-align: right; font-size: 0.72rem; color: var(--text-muted); }
 
   .tr-feedback { margin-bottom: 16px; }
+  /* Refined feedback bands: clean primary text on a near-neutral surface, with a
+     single muted colour cue on the left edge — premium, not rainbow. */
   .tr-line {
     font-size: 0.92rem; line-height: 1.55;
-    margin: 6px 0; padding: 8px 12px; border-radius: var(--radius-sm);
+    margin: 6px 0; padding: 8px 12px 8px 14px;
+    border-radius: var(--radius-sm);
+    background: rgba(148,163,184,0.06);
+    border-left: 3px solid var(--card-border);
+    color: var(--text-primary);
   }
-  .tr-bravo   { background: rgba(74,222,128,0.08); color: #86efac; }
-  .tr-nascent { background: rgba(250,204,21,0.08); color: #fde68a; }
-  .tr-work    { background: rgba(248,113,113,0.08); color: #fca5a5; }
+  .tr-bravo   { border-left-color: var(--tone3); }
+  .tr-nascent { border-left-color: var(--tone2); }
+  .tr-work    { border-left-color: var(--tone1); }
 
   .tr-reco {
     background: var(--accent-glow);
@@ -261,6 +280,36 @@ export const TONE_REPORT_CSS = `
     margin: 4px 0;
   }
   .tr-feature { color: var(--text-secondary) !important; font-size: 0.85rem !important; }
+
+  /* ── Progressive disclosure: feedback teaser first, detail behind a toggle ── */
+  .tr-report-head {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--text-muted); font-weight: 600; margin-bottom: 10px;
+  }
+  .tr-more { margin-top: 12px; }
+  .tr-more > summary { list-style: none; }
+  .tr-more > summary::-webkit-details-marker { display: none; }
+  .tr-more-summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    cursor: pointer;
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    background: var(--accent-glow);
+    border: 1px solid rgba(56,189,248,0.3);
+    color: var(--accent);
+    font-weight: 600; font-size: 0.92rem;
+    user-select: none;
+    transition: background 0.2s;
+  }
+  .tr-more-summary:hover { background: rgba(56,189,248,0.22); }
+  .tr-more-chevron { transition: transform 0.25s; }
+  .tr-more[open] .tr-more-chevron { transform: rotate(180deg); }
+  .tr-more-body { padding-top: 16px; }
+
+  /* Composite "not yet taken" placeholder card */
+  .tr-card-empty { opacity: 0.55; }
+  .tr-empty-label { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
+  .tr-empty-sub { font-size: 0.8rem; color: var(--text-muted); }
 
   /* Accordion shell (slide 5 pattern) */
   .tr-accordion {

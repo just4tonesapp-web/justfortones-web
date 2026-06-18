@@ -4,13 +4,11 @@
 import { navigate } from '../router.js'
 import { getResults } from '../services/progressService.js'
 
-const TEST_LABELS = {
-  A: 'Test A — Single Syllable Listening',
-  B: 'Test B — Two-Syllable Listening',
-  C: 'Test C — Single Character Pronunciation',
-  D: 'Test D — Two-Character Pronunciation',
-  X: 'Test X — Top 50 Character Tones',
-  Y: 'Test Y — Disyllabic Word Tones',
+// Only the current diagnostic tests (1–3). Legacy D / X / Y attempts are hidden.
+const TESTS = {
+  A: { chip: 'Test 1', label: 'Test 1 — Recognizing 1-Syllable Words' },
+  B: { chip: 'Test 2', label: 'Test 2 — Recognizing 2-Syllable Words' },
+  C: { chip: 'Test 3', label: 'Test 3 — Speaking 1-Syllable Words' },
 }
 
 function formatDate(iso) {
@@ -41,7 +39,7 @@ export async function historyView(container) {
 
       <div class="hist-filter" id="hist-filter">
         <button class="hist-chip active" data-filter="all">All</button>
-        ${Object.keys(TEST_LABELS).map(t => `<button class="hist-chip" data-filter="${t}">${t}</button>`).join('')}
+        ${Object.entries(TESTS).map(([t, info]) => `<button class="hist-chip" data-filter="${t}">${info.chip}</button>`).join('')}
       </div>
 
       <div class="card animate-in" id="hist-body">
@@ -56,7 +54,8 @@ export async function historyView(container) {
 
   document.getElementById('hist-back').addEventListener('click', () => navigate('/'))
 
-  const results = await getResults()
+  // Only show current tests (1–3); legacy D / X / Y attempts are excluded.
+  const results = (await getResults()).filter(r => TESTS[r.test_type])
   renderList(results, 'all')
 
   document.querySelectorAll('#hist-filter .hist-chip').forEach(chip => {
@@ -73,7 +72,7 @@ function renderList(results, filter) {
   const filtered = filter === 'all' ? results : results.filter(r => r.test_type === filter)
 
   if (!filtered.length) {
-    body.innerHTML = `<div class="hist-empty">No attempts yet${filter === 'all' ? '' : ` for Test ${filter}`}.</div>`
+    body.innerHTML = `<div class="hist-empty">No attempts yet${filter === 'all' ? '' : ` for ${TESTS[filter]?.chip || filter}`}.</div>`
     return
   }
 
@@ -83,7 +82,7 @@ function renderList(results, filter) {
   const rows = filtered.map(r => {
     const pct = Math.round((r.score / r.total) * 100)
     const icon = r.passed ? '✅' : '❌'
-    const label = TEST_LABELS[r.test_type] || `Test ${r.test_type}`
+    const label = TESTS[r.test_type]?.label || `Test ${r.test_type}`
     const date = formatDate(r.created_at)
     const barColor = r.passed ? 'var(--correct)' : 'var(--incorrect)'
     return `

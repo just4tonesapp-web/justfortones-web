@@ -11,8 +11,9 @@
     <link rel="stylesheet" href="/src/styles/global.css">
   </head>
   <body>
-    <!-- App root: views are rendered here by the router -->
-    <div id="app"></div>
+    <!-- App root: views are rendered here by the router.
+         The loader shows during JS download + boot, then the first view replaces it. -->
+    <div id="app"><div class="loader-overlay"><div class="loader-spinner"></div></div></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

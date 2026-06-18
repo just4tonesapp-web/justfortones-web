@@ -126,35 +126,23 @@ export function testDView(container) {
   container.innerHTML = `
     <div class="app-shell">
       <div class="back-row">
-        <button class="back-home-btn" id="td-home">← Home</button>
+        <button class="app-logo" id="td-home">Just4Tones</button>
       </div>
       <div class="td-header">
-        <span class="badge">Diagnostic Step 2</span>
-        <h1>Test D — Two-Character Pronunciation</h1>
-        <p>Can you pronounce two-character words?</p>
+        <h1><span class="title-badge">4</span>Speaking — 2-Syllable Words</h1>
       </div>
 
-      <!-- Intro -->
+      <!-- Intro (slide 19) -->
       <div id="td-intro" class="card animate-in text-center">
-        <div style="font-size:3rem;margin-bottom:16px">🎤</div>
-        <h2>Speak the words!</h2>
-        <p style="color:var(--text-secondary);margin:12px 0;line-height:1.6">
-          You'll see 12 two-character words with their pinyin.<br>
-          Listen to the example, then record yourself saying the word.<br>
-          We'll analyze the tone of <strong>both characters</strong>.
+        <p class="intro-copy">
+          You are going to listen to 12 two-syllable Chinese words.
+          Pick the one with the correct tones.
         </p>
-        <div class="intro-rules">
-          <strong>How it works:</strong><br>
-          — Tap 🔊 to hear the correct pronunciation<br>
-          — Tap 🎤 to record yourself (up to 6 seconds)<br>
-          — Both characters' tones are analyzed<br>
-          — Score ${PASS_SCORE}+ out of 12 to pass
-        </div>
-        <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:8px">
-          Allow microphone access when prompted
+        <p style="color:var(--text-muted);font-size:0.78rem;margin-bottom:8px">
+          ⚠️ Allow microphone access when prompted
         </p>
         <p id="td-model-status" style="display:none"></p>
-        <button class="btn btn-primary btn-lg" id="td-start">Start Test D</button>
+        <button class="btn btn-primary btn-lg" id="td-start">START NOW</button>
       </div>
 
       <!-- Quiz -->
@@ -317,6 +305,8 @@ export function testDView(container) {
   function startTest() {
     generate()
     currentQ = 0; score = 0; answers = []; testStart = Date.now()
+    container.querySelector('.back-row')?.classList.remove('hidden')
+    container.querySelector('.td-header')?.classList.remove('hidden')
     $('td-intro').classList.add('hidden')
     $('td-quiz').classList.remove('hidden')
     $('td-report').classList.add('hidden')
@@ -780,10 +770,11 @@ export function testDView(container) {
   // ── Report (accordion-style score screen, slide 20) ──
   async function showReport() {
     $('td-quiz').classList.add('hidden')
+    container.querySelector('.back-row')?.classList.add('hidden')
+    container.querySelector('.td-header')?.classList.add('hidden')
     const el = $('td-report')
     el.classList.remove('hidden')
 
-    const passed = score >= PASS_SCORE
     const elapsed = Math.round((Date.now() - testStart) / 1000)
     await saveResult('D', score, TOTAL, { elapsed, answers })
 
@@ -797,52 +788,44 @@ export function testDView(container) {
     })
 
     el.innerHTML = `
-      <div class="app-shell animate-in">
-        <div class="score-card">
-          <div class="score-headline">🎯 Final score</div>
-          <div class="score-big">${score}/${TOTAL}</div>
-          <div class="score-sub">
-            ${passed
-              ? `Fantastic! You can pronounce tone combinations almost effortlessly.`
-              : `Fluctuation in performance when producing foreign sounds is totally expected.`}
+      <div class="result-shell animate-in">
+        <button class="app-logo" id="td-logo">Just4Tones</button>
+
+        <div class="result-scorecard">
+          <div class="rs-score">
+            <span class="rs-score-label">You scored</span>
+            <span class="rs-score-value">${score}/${TOTAL}</span>
+          </div>
+          <div class="rs-divider"></div>
+          <div class="tr-accordion rs-acc">
+            <button class="tr-accordion-head" type="button">
+              <div class="tr-accordion-head-text">
+                <div class="tr-accordion-head-title">open your REPORT</div>
+              </div>
+              <div class="tr-accordion-chevron">▾</div>
+            </button>
+            <div class="tr-accordion-body">
+              <div class="tr-accordion-body-inner">
+                ${reportInner.html}
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="tr-accordion">
-          <button class="tr-accordion-head" type="button">
-            <div class="tr-accordion-head-text">
-              <div class="tr-accordion-head-title">📊 Open your Report</div>
-              <div class="tr-accordion-head-sub">Tap to see per-tone breakdown & recommendations</div>
-            </div>
-            <div class="tr-accordion-chevron">▾</div>
-          </button>
-          <div class="tr-accordion-body">
-            <div class="tr-accordion-body-inner">
-              ${reportInner.html}
-            </div>
-          </div>
-        </div>
+        <button class="result-next result-next-final" id="td-next">
+          <div class="result-next-head">REPORT</div>
+          <div class="result-next-title">Get your full report</div>
+        </button>
 
-        <div class="next-challenge-d">
-          <div class="next-challenge-head-d">🎉 You've finished all 4 tests!</div>
-          <button class="next-challenge-btn-d" id="td-next">
-            <div class="next-challenge-icon-d">📋</div>
-            <div class="next-challenge-body-d">
-              <div class="next-challenge-title-d">Get your full report</div>
-              <div class="next-challenge-sub-d">Composite analysis across all four tests</div>
-            </div>
-            <div class="next-challenge-arrow-d">→</div>
-          </button>
-        </div>
-
-        <div class="retake-row-d">
-          <p class="retake-prompt-d">Do you want to take this test again? Fluctuation in performance is totally expected.</p>
-          <button class="btn btn-secondary" id="td-retry">🔄 Test Again</button>
-        </div>
+        <p class="result-retake">
+          Do you want to take that test again? Fluctuation in performance in speaking foreign sounds is totally expected.
+          <button class="result-retake-link" id="td-retry">Test Again</button>
+        </p>
       </div>
     `
 
     bindAccordion(el)
+    document.getElementById('td-logo').addEventListener('click', () => navigate('/'))
     document.getElementById('td-retry').addEventListener('click', startTest)
     document.getElementById('td-next').addEventListener('click', () => navigate('/report'))
   }
@@ -866,18 +849,16 @@ const scopedCSS = `
     margin-bottom: 28px;
   }
   .td-header h1 {
-    font-size: 1.65rem; font-weight: 700; margin: 10px 0 6px;
+    font-size: 1.55rem; font-weight: 700; margin: 0;
     background: linear-gradient(135deg, #f1f5f9 30%, #38bdf8);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
-  .td-header p { color: var(--text-secondary); font-size: 0.95rem; }
-
-  .intro-rules {
-    text-align: left; background: var(--surface); border-radius: var(--radius-sm);
-    padding: 16px 20px; margin: 20px 0; font-size: 0.85rem;
-    color: var(--text-secondary); line-height: 1.7;
+  .intro-copy {
+    color: var(--text-primary);
+    font-size: 1rem;
+    line-height: 1.65;
+    margin: 0 0 16px;
   }
-  .intro-rules strong { color: var(--text-primary); }
 
   .progress-wrap { margin-bottom: 24px; }
   .progress-info { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 8px; }
@@ -1123,54 +1104,86 @@ const scopedCSS = `
 
 // ── New score-screen styles (slides 20, 12) ──
 const tdExtraCSS = `
-  .score-card {
-    text-align: center;
-    padding: 24px 16px 28px;
-    margin-bottom: 18px;
+  .result-scorecard {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 22px;
   }
-  .score-headline { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); margin-bottom: 8px; }
-  .score-big {
-    font-size: 3.2rem; font-weight: 700;
+  .rs-score { text-align: center; padding: 28px 20px 22px; }
+  .rs-score-label {
+    display: block; font-size: 0.8rem;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--accent); margin-bottom: 10px;
+  }
+  .rs-score-value {
+    display: block; font-size: 3.2rem; font-weight: 700; line-height: 1;
     background: linear-gradient(135deg, #f1f5f9 30%, #38bdf8);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    line-height: 1; margin-bottom: 8px;
   }
-  .score-sub { color: var(--text-secondary); font-size: 0.92rem; line-height: 1.5; }
+  .rs-divider { height: 1px; background: var(--card-border); }
+  .rs-acc {
+    border: none !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+  }
 
-  .next-challenge-d { margin-top: 22px; }
-  .next-challenge-head-d {
-    text-align: center; font-size: 1.02rem; font-weight: 600;
-    color: var(--text-primary); margin-bottom: 10px;
-  }
-  .next-challenge-btn-d {
+  .result-next {
     width: 100%;
-    display: flex; align-items: center; gap: 14px;
-    background: linear-gradient(135deg, rgba(74,222,128,0.18), rgba(56,189,248,0.18));
-    border: 1px solid var(--correct);
+    display: block; text-align: center;
+    background: linear-gradient(135deg, rgba(56,189,248,0.12), rgba(129,140,248,0.12));
+    border: 1px solid var(--accent);
     border-radius: var(--radius);
-    padding: 18px;
+    padding: 20px 18px;
     cursor: pointer; font-family: inherit;
     color: var(--text-primary);
     transition: all 0.2s;
+    margin-bottom: 24px;
   }
-  .next-challenge-btn-d:hover {
-    background: linear-gradient(135deg, rgba(74,222,128,0.28), rgba(56,189,248,0.28));
+  .result-next:hover {
+    background: linear-gradient(135deg, rgba(56,189,248,0.22), rgba(129,140,248,0.22));
     transform: translateY(-1px);
   }
-  .next-challenge-icon-d { font-size: 1.8rem; flex-shrink: 0; }
-  .next-challenge-body-d { flex: 1; text-align: left; }
-  .next-challenge-title-d { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
-  .next-challenge-sub-d { font-size: 0.8rem; color: var(--text-secondary); }
-  .next-challenge-arrow-d { font-size: 1.3rem; color: var(--correct); flex-shrink: 0; }
-
-  .retake-row-d { margin-top: 22px; text-align: center; }
-  .retake-prompt-d {
-    color: var(--text-muted); font-size: 0.82rem;
-    margin-bottom: 10px; line-height: 1.5;
+  .result-next-head {
+    font-size: 0.95rem; font-weight: 700;
+    color: var(--accent); margin-bottom: 6px;
   }
+  .result-next-title { font-size: 1.15rem; font-weight: 600; }
+
+  /* Final test → composite report: green "you finished" accent. */
+  .result-next-final {
+    background: linear-gradient(135deg, rgba(74,222,128,0.18), rgba(56,189,248,0.18));
+    border-color: var(--correct);
+  }
+  .result-next-final:hover {
+    background: linear-gradient(135deg, rgba(74,222,128,0.28), rgba(56,189,248,0.28));
+  }
+  .result-next-final .result-next-head { color: var(--correct); }
+
+  .result-retake {
+    text-align: center;
+    font-style: italic;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0 8px;
+  }
+  .result-retake-link {
+    background: none; border: none; padding: 0; margin-left: 4px;
+    font-family: inherit; font-size: 0.85rem;
+    font-style: italic; font-weight: 700;
+    color: var(--text-primary);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .result-retake-link:hover { color: var(--accent); }
+
   @media (max-width: 480px) {
-    .score-big { font-size: 2.6rem; }
+    .rs-score-value { font-size: 2.6rem; }
   }
 `

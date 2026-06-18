@@ -7,13 +7,18 @@ import { navigate } from '../router.js'
 export function authView(container) {
   let isLogin = true
   let loading = false
-  let showForgot = false
+
+  // Username + password are stored in OUR database (Supabase Postgres via the
+  // app_signup / app_login pgcrypto RPCs) — NOT Supabase Auth. No email, no
+  // domain, no email-rate-limit. Passwords are hashed server-side in the DB.
+  const normalizeUser = (u) => u.trim().toLowerCase()
 
   render()
 
   function render() {
     container.innerHTML = `
       <div class="app-shell">
+        <button class="auth-home" id="auth-home">← Back to home</button>
         <header class="auth-header">
           <h1 class="auth-title">Just4Tones</h1>
           <p class="auth-subtitle">Master the four tones of Mandarin Chinese</p>
@@ -27,22 +32,10 @@ export function authView(container) {
 
           <div id="auth-message" class="auth-message hidden"></div>
 
-          ${showForgot ? `
           <div class="auth-form">
             <div class="field">
-              <label for="auth-email">Email</label>
-              <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" />
-            </div>
-            <button class="btn btn-primary btn-lg auth-submit" id="auth-reset">
-              Send Reset Link
-            </button>
-            <button class="btn-link auth-back" id="auth-back">← Back to Log In</button>
-          </div>
-          ` : `
-          <div class="auth-form">
-            <div class="field">
-              <label for="auth-email">Email</label>
-              <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" />
+              <label for="auth-user">Username</label>
+              <input type="text" id="auth-user" placeholder="${isLogin ? 'Your username' : 'Choose a username'}" autocomplete="username" autocapitalize="none" spellcheck="false" />
             </div>
             <div class="field">
               <label for="auth-pass">Password</label>
@@ -51,9 +44,9 @@ export function authView(container) {
             <button class="btn btn-primary btn-lg auth-submit" id="auth-submit">
               ${isLogin ? 'Log In' : 'Create Account'}
             </button>
-            ${isLogin ? '<button class="btn-link auth-forgot" id="auth-forgot">Forgot password?</button>' : ''}
           </div>
-          `}
+
+          <p class="auth-support">Trouble logging in? Contact <a href="mailto:support@fourfones.com">support@fourfones.com</a></p>
 
           <div class="auth-divider"><span>or</span></div>
 
@@ -71,32 +64,13 @@ export function authView(container) {
     container.appendChild(style)
 
     // Bind events
-    document.getElementById('tab-login').addEventListener('click', () => {
-      isLogin = true; showForgot = false; render()
-    })
-    document.getElementById('tab-signup').addEventListener('click', () => {
-      isLogin = false; showForgot = false; render()
-    })
+    document.getElementById('tab-login').addEventListener('click', () => { isLogin = true; render() })
+    document.getElementById('tab-signup').addEventListener('click', () => { isLogin = false; render() })
     document.getElementById('auth-guest').addEventListener('click', handleGuest)
-
-    if (showForgot) {
-      document.getElementById('auth-reset').addEventListener('click', handleReset)
-      document.getElementById('auth-back').addEventListener('click', () => {
-        showForgot = false; render()
-      })
-      document.getElementById('auth-email').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') handleReset()
-      })
-    } else {
-      document.getElementById('auth-submit').addEventListener('click', handleSubmit)
-      const forgotBtn = document.getElementById('auth-forgot')
-      if (forgotBtn) forgotBtn.addEventListener('click', () => {
-        showForgot = true; render()
-      })
-      document.getElementById('auth-pass').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') handleSubmit()
-      })
-    }
+    document.getElementById('auth-home').addEventListener('click', () => navigate('/'))
+    document.getElementById('auth-submit').addEventListener('click', handleSubmit)
+    document.getElementById('auth-user').addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSubmit() })
+    document.getElementById('auth-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSubmit() })
   }
 
   function showMessage(text, isError = false) {
@@ -116,11 +90,15 @@ export function authView(container) {
 
   async function handleSubmit() {
     if (loading) return
-    const email = document.getElementById('auth-email').value.trim()
+    const username = normalizeUser(document.getElementById('auth-user').value)
     const pass = document.getElementById('auth-pass').value
 
-    if (!email || !pass) {
-      showMessage('Please enter both email and password.', true)
+    if (username.length < 3) {
+      showMessage('Username must be at least 3 characters.', true)
+      return
+    }
+    if (!/^[a-z0-9._-]+$/.test(username)) {
+      showMessage('Username can only use letters, numbers, and . _ -', true)
       return
     }
     if (pass.length < 6) {
@@ -129,65 +107,52 @@ export function authView(container) {
     }
 
     setLoading(true)
-
     try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password: pass })
-        if (error) throw error
-        navigate('/')
-      } else {
-        const redirectTo = window.location.origin + import.meta.env.BASE_URL
-        const { error } = await supabase.auth.signUp({
-          email,
-          password: pass,
-          options: { emailRedirectTo: redirectTo },
-        })
-        if (error) throw error
-        showMessage('Account created! Check your email to confirm, then log in.', false)
-        isLogin = true
+      // Hashing & verification happen server-side in Postgres (pgcrypto RPCs).
+      const { data, error } = await supabase.rpc(isLogin ? 'app_login' : 'app_signup', {
+        p_username: username, p_password: pass,
+      })
+      if (error) throw error
+      if (!data || data.error) {
+        showMessage(rpcError(data && data.error, isLogin), true)
         setLoading(false)
+        return
       }
+      // Success — store our lightweight session and continue.
+      localStorage.setItem('j4t_user', JSON.stringify({ id: data.id, username: data.username }))
+      sessionStorage.removeItem('j4t_guest')
+      window.dispatchEvent(new Event('j4t-auth')) // tell main.js to show the account bar
+      const dest = sessionStorage.getItem('j4t_redirect') || '/'
+      sessionStorage.removeItem('j4t_redirect')
+      navigate(dest)
     } catch (err) {
-      showMessage(friendlyError(err.message), true)
+      showMessage(friendlyError(err?.message), true)
       setLoading(false)
     }
   }
 
-  async function handleReset() {
-    if (loading) return
-    const email = document.getElementById('auth-email').value.trim()
-    if (!email) {
-      showMessage('Please enter your email address.', true)
-      return
-    }
-
-    setLoading(true)
-    try {
-      const redirectTo = window.location.origin + import.meta.env.BASE_URL
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
-      if (error) throw error
-      showMessage('Password reset link sent! Check your email.', false)
-      setLoading(false)
-    } catch (err) {
-      showMessage(friendlyError(err.message), true)
-      setLoading(false)
-    }
+  function rpcError(code, isLogin) {
+    if (code === 'username taken') return 'That username is taken. Try logging in instead.'
+    if (code === 'invalid input') return 'Use a 3+ character username and a 6+ character password.'
+    if (code === 'invalid') return isLogin ? 'Incorrect username or password.' : 'Could not create the account.'
+    return 'Something went wrong. Please try again.'
   }
 
   function friendlyError(msg) {
     if (!msg) return 'Something went wrong. Please try again.'
-    if (msg.includes('Invalid login')) return 'Incorrect email or password.'
-    if (msg.includes('Email not confirmed')) return 'Please check your email and confirm your account first.'
-    if (msg.includes('already registered')) return 'This email is already registered. Try logging in instead.'
-    if (msg.includes('rate limit') || msg.includes('too many')) return 'Too many attempts. Please wait a moment and try again.'
+    if (msg.includes('Could not find the function') || msg.includes('schema cache'))
+      return 'Login isn\'t set up yet — run the account SQL in Supabase first.'
     if (msg.includes('not configured')) return 'Login service is unavailable. Try guest mode.'
-    return msg
+    return msg // surface the real DB error (helps during setup)
   }
 
   function handleGuest() {
     // Store a guest flag in sessionStorage so the app knows
     sessionStorage.setItem('j4t_guest', '1')
-    navigate('/')
+    // Resume to wherever the user was headed (the CTA → /diagnose), if anywhere.
+    const dest = sessionStorage.getItem('j4t_redirect') || '/'
+    sessionStorage.removeItem('j4t_redirect')
+    navigate(dest)
   }
 }
 
@@ -195,10 +160,21 @@ export function authView(container) {
 // Scoped CSS
 // ═══════════════════════════════════════
 const scopedCSS = `
+  .auth-home {
+    align-self: flex-start;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 6px 4px;
+  }
+  .auth-home:hover { color: var(--accent); }
   .auth-header {
     text-align: center;
     margin-bottom: 32px;
-    padding-top: 24px;
+    padding-top: 8px;
   }
   .auth-title {
     font-size: 2.4rem;
@@ -352,6 +328,15 @@ const scopedCSS = `
     color: var(--text-muted);
     margin-top: 8px;
   }
+
+  .auth-support {
+    text-align: center;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin: 14px 0 0;
+  }
+  .auth-support a { color: var(--accent); text-decoration: none; }
+  .auth-support a:hover { text-decoration: underline; }
 
   @media (max-width: 480px) {
     .auth-card { padding: 24px 16px; }

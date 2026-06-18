@@ -16,4 +16,5 @@ export const supabase = (supabaseUrl && supabaseKey)
         resetPasswordForEmail: async () => ({ error: { message: 'Supabase not configured' } }),
         signOut: async () => {},
       },
+      rpc: async () => ({ data: null, error: { message: 'Supabase not configured' } }),
     }

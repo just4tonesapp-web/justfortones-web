@@ -34,7 +34,10 @@ export function testAView(container) {
       const fresh = SYLLABLE_POOL.filter(s =>
         !used.has(s) && !previousItems.has(`${s}${t}`) && hasRecording(s, t) && hasCharacter(s, t))
       const cand = SYLLABLE_POOL.filter(s => !used.has(s) && hasRecording(s, t) && hasCharacter(s, t))
-      const pool = fresh.length ? fresh : (cand.length ? cand : SYLLABLE_POOL.filter(s => !used.has(s)))
+      // Last-resort fallback STILL requires a real character: combos that were
+      // marked "_X" (no real Chinese character) must never be quizzed, even if a
+      // recording exists for them. hasCharacter() is the authoritative gate.
+      const pool = fresh.length ? fresh : (cand.length ? cand : SYLLABLE_POOL.filter(s => !used.has(s) && hasCharacter(s, t)))
       const syllable = pool[Math.floor(Math.random() * pool.length)]
       used.add(syllable)
       return { syllable, tone: t }
@@ -44,32 +47,21 @@ export function testAView(container) {
 
   // ── Mount ──
   container.innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell shell-top-center">
       <div class="back-row">
-        <button class="back-home-btn" id="ta-home">← Home</button>
+        <button class="app-logo" id="ta-home">Just4Tones</button>
       </div>
       <div class="testa-header">
-        <span class="badge">Step 1 of 4</span>
-        <h1>1️⃣ Listening — 1-Syllable Words</h1>
-        <p>Find out exactly where your tone skills stand.</p>
+        <h1><span class="title-badge">1</span>Recognizing — 1-Syllable Words</h1>
       </div>
 
-      <!-- Intro -->
+      <!-- Intro (slide 4) -->
       <div id="ta-intro" class="card animate-in text-center">
-        <div style="font-size:3rem;margin-bottom:16px">🎧</div>
-        <h2>Ready?</h2>
-        <p style="color:var(--text-secondary);margin:12px 0;line-height:1.6">
-          In this test, you are going to hear <strong>8 different single-syllable Chinese words</strong>.
+        <p class="intro-copy">
+          In this test, you are going to hear 8 different single-syllable Chinese words.
           Pick the correct tones.
         </p>
-        <div class="intro-rules">
-          <strong>How it works:</strong><br>
-          — 8 questions, one at a time<br>
-          — Each tone appears exactly ${PER_TONE} times<br>
-          — Tap the speaker to hear the syllable<br>
-          — Pick the pinyin with the correct tone mark
-        </div>
-        <button class="btn btn-primary btn-lg" id="ta-start">Start Now</button>
+        <button class="btn btn-primary btn-lg" id="ta-start">START NOW</button>
       </div>
 
       <!-- Quiz -->
@@ -111,6 +103,9 @@ export function testAView(container) {
   function startTest() {
     generate()
     currentQ = 0; score = 0; answers = []; testStart = Date.now()
+    // Restore the test chrome (hidden while the result screen is up).
+    container.querySelector('.back-row')?.classList.remove('hidden')
+    container.querySelector('.testa-header')?.classList.remove('hidden')
     $('ta-intro').classList.add('hidden')
     $('ta-quiz').classList.remove('hidden')
     $('ta-report').classList.add('hidden')
@@ -212,68 +207,53 @@ export function testAView(container) {
   // ═══════════════════════════════════════════════════════════════
   function showScoreScreen() {
     $('ta-quiz').classList.add('hidden')
+    // Result screen stands on its own (slide 5) — hide the test chrome above it.
+    container.querySelector('.back-row')?.classList.add('hidden')
+    container.querySelector('.testa-header')?.classList.add('hidden')
     const el = $('ta-report')
     el.classList.remove('hidden')
 
-    const passed = score >= PASS_SCORE
     saveResult('A', score, TOTAL, { answers, totalTime: Date.now() - testStart })
 
     const analysis = analyzeSingleSyllable(answers)
     const reportInner = buildReportHTML({
       analysis, score, total: TOTAL,
-      testLabel: 'Test 1 · Listening 1-syllable',
+      testLabel: 'Test 1 · Recognizing 1-syllable',
       shape: 'single',
+      skill: 'recognizing',
+      showSummary: false, // score already shown in the headline above
     })
 
     el.innerHTML = `
-      <div class="app-shell animate-in">
-        <div class="score-card">
-          <div class="score-headline">🎯 You scored</div>
-          <div class="score-big">${score}/${TOTAL}</div>
-          <div class="score-sub">
-            ${passed
-              ? `Nice work — your ear is tuned!`
-              : `Fluctuation in performance when listening to foreign sounds is totally expected.`}
+      <div class="result-shell animate-in">
+        <button class="app-logo" id="ta-logo">Just4Tones</button>
+
+        <div class="result-scorecard">
+          <div class="rs-score">
+            <span class="rs-score-label">You scored</span>
+            <span class="rs-score-value">${score}/${TOTAL}</span>
           </div>
+          <div class="rs-divider"></div>
+          <div class="tr-report-head">Your REPORT</div>
+          ${reportInner.html}
         </div>
 
-        <div class="tr-accordion" id="ta-acc">
-          <button class="tr-accordion-head" type="button">
-            <div class="tr-accordion-head-text">
-              <div class="tr-accordion-head-title">📊 Open your Report</div>
-              <div class="tr-accordion-head-sub">Tap to see per-tone breakdown & recommendations</div>
-            </div>
-            <div class="tr-accordion-chevron">▾</div>
-          </button>
-          <div class="tr-accordion-body">
-            <div class="tr-accordion-body-inner">
-              ${reportInner.html}
-            </div>
-          </div>
-        </div>
+        <button class="result-next" id="ta-next">
+          <div class="result-next-head">Try Next Challenge!</div>
+          <div class="result-next-title">Two Syllables words</div>
+        </button>
 
-        <div class="next-challenge">
-          <div class="next-challenge-head">Try Next Challenge!</div>
-          <button class="next-challenge-btn" id="ta-next">
-            <div class="next-challenge-icon">2️⃣</div>
-            <div class="next-challenge-body">
-              <div class="next-challenge-title">Listening — 2-Syllable Words</div>
-              <div class="next-challenge-sub">15 questions · all tone combinations</div>
-            </div>
-            <div class="next-challenge-arrow">→</div>
-          </button>
-        </div>
-
-        <div class="retake-row">
-          <p class="retake-prompt">Do you want to take this test again? Fluctuation in performance is totally expected.</p>
-          <button class="btn btn-secondary" id="ta-retry">🔄 Test Again</button>
-        </div>
+        <p class="result-retake">
+          Do you want to take that test again? Fluctuation in performance in listening foreign sounds is totally expected.
+          <button class="result-retake-link" id="ta-retry">Test Again</button>
+        </p>
       </div>
     `
 
     bindAccordion(el)
+    document.getElementById('ta-logo').addEventListener('click', () => navigate('/'))
     document.getElementById('ta-retry').addEventListener('click', startTest)
-    document.getElementById('ta-next').addEventListener('click', () => navigate('/test-b'))
+    document.getElementById('ta-next').addEventListener('click', () => navigate('/test-2'))
   }
 }
 
@@ -288,28 +268,18 @@ const scopedCSS = `
   .testa-header h1 {
     font-size: 1.55rem;
     font-weight: 700;
-    margin: 10px 0 6px;
+    margin: 0;
     background: linear-gradient(135deg, #f1f5f9 30%, #38bdf8);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
-  .testa-header p {
-    color: var(--text-secondary);
-    font-size: 0.95rem;
+  .intro-copy {
+    color: var(--text-primary);
+    font-size: 1rem;
+    line-height: 1.65;
+    margin: 0 0 24px;
   }
-
-  .intro-rules {
-    text-align: left;
-    background: var(--surface);
-    border-radius: var(--radius-sm);
-    padding: 16px 20px;
-    margin: 20px 0;
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    line-height: 1.7;
-  }
-  .intro-rules strong { color: var(--text-primary); }
 
   .progress-wrap { margin-bottom: 24px; }
   .progress-info {
@@ -401,64 +371,83 @@ const scopedCSS = `
   .choice-btn.disabled { cursor: default; opacity: 0.55; }
   .choice-btn.correct.disabled, .choice-btn.incorrect.disabled { opacity: 1; }
 
-  /* Score screen */
-  .score-card {
-    text-align: center;
-    padding: 24px 16px 28px;
-    margin-bottom: 18px;
+  /* ── Result screen (slide 5) ── */
+  /* Score + REPORT accordion share one card (slide 5 mock). */
+  .result-scorecard {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 22px;
   }
-  .score-headline { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); margin-bottom: 8px; }
-  .score-big {
-    font-size: 3.2rem; font-weight: 700;
+  .rs-score { text-align: center; padding: 28px 20px 22px; }
+  .rs-score-label {
+    display: block; font-size: 0.8rem;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--accent); margin-bottom: 10px;
+  }
+  .rs-score-value {
+    display: block; font-size: 3.2rem; font-weight: 700; line-height: 1;
     background: linear-gradient(135deg, #f1f5f9 30%, #38bdf8);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    line-height: 1; margin-bottom: 8px;
   }
-  .score-sub { color: var(--text-secondary); font-size: 0.92rem; line-height: 1.5; }
+  .rs-divider { height: 1px; background: var(--card-border); }
+  /* Neutralise the accordion's own shell so it sits flush inside the card. */
+  .rs-acc {
+    border: none !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+  }
 
-  .next-challenge {
-    margin-top: 22px;
-  }
-  .next-challenge-head {
-    text-align: center; font-size: 0.92rem; font-weight: 600;
-    color: var(--text-primary); margin-bottom: 10px;
-  }
-  .next-challenge-btn {
+  .result-next {
     width: 100%;
-    display: flex; align-items: center; gap: 14px;
-    background: linear-gradient(135deg, rgba(56,189,248,0.15), rgba(129,140,248,0.15));
+    display: block; text-align: center;
+    background: linear-gradient(135deg, rgba(56,189,248,0.12), rgba(129,140,248,0.12));
     border: 1px solid var(--accent);
     border-radius: var(--radius);
-    padding: 16px 18px;
+    padding: 20px 18px;
     cursor: pointer; font-family: inherit;
     color: var(--text-primary);
     transition: all 0.2s;
+    margin-bottom: 24px;
   }
-  .next-challenge-btn:hover {
-    background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(129,140,248,0.25));
+  .result-next:hover {
+    background: linear-gradient(135deg, rgba(56,189,248,0.22), rgba(129,140,248,0.22));
     transform: translateY(-1px);
   }
-  .next-challenge-icon { font-size: 1.8rem; flex-shrink: 0; }
-  .next-challenge-body { flex: 1; text-align: left; }
-  .next-challenge-title { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
-  .next-challenge-sub { font-size: 0.8rem; color: var(--text-secondary); }
-  .next-challenge-arrow { font-size: 1.3rem; color: var(--accent); flex-shrink: 0; }
+  .result-next-head {
+    font-size: 0.95rem; font-weight: 700;
+    color: var(--accent); margin-bottom: 6px;
+  }
+  .result-next-title { font-size: 1.15rem; font-weight: 600; }
 
-  .retake-row {
-    margin-top: 22px; text-align: center;
+  .result-retake {
+    text-align: center;
+    font-style: italic;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0 8px;
   }
-  .retake-prompt {
-    color: var(--text-muted); font-size: 0.82rem;
-    margin-bottom: 10px; line-height: 1.5;
+  .result-retake-link {
+    background: none; border: none; padding: 0; margin-left: 4px;
+    font-family: inherit; font-size: 0.85rem;
+    font-style: italic; font-weight: 700;
+    color: var(--text-primary);
+    text-decoration: underline;
+    cursor: pointer;
   }
+  .result-retake-link:hover { color: var(--accent); }
 
   @media (max-width: 480px) {
     .choices { gap: 10px; }
     .choice-btn { padding: 14px 8px; }
     .choice-pinyin { font-size: 1.15rem; }
     .play-btn { width: 80px; height: 80px; }
-    .score-big { font-size: 2.6rem; }
+    .rs-score-value { font-size: 2.6rem; }
   }
 `

@@ -190,8 +190,15 @@ export class ToneDetector {
       )
     }
 
-    // Run all in parallel
-    const results = (await Promise.all(jobs)).filter(Boolean)
+    // Run all in parallel, but bound each job with a timeout so a hung request
+    // (e.g. a cloud model whose fetch never resolves) can't freeze detection
+    // forever — the always-on pitch model still returns a vote. Each job already
+    // resolves to null on error; timing out also resolves to null.
+    const JOB_TIMEOUT_MS = 9000
+    const bounded = jobs.map(j =>
+      Promise.race([j, new Promise(res => setTimeout(() => res(null), JOB_TIMEOUT_MS))])
+    )
+    const results = (await Promise.all(bounded)).filter(Boolean)
 
     // Debug: log each model's vote
     const voteStr = results.map(r => `${r.model}→T${r.tone}(w=${r.weight})`).join('  ')

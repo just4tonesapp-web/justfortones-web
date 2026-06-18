@@ -9,6 +9,10 @@
 import { InferenceSession, Tensor, env } from 'onnxruntime-web'
 
 env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/'
+// Run inference in a Web Worker so the (large) model's run() doesn't block the
+// main thread and freeze the page. If proxy mode fails the model is simply
+// skipped (the ensemble still works), so this is safe.
+env.wasm.proxy = true
 
 const MAX_LENGTH = 48000  // 3s at 16kHz
 

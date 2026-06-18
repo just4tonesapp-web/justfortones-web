@@ -36,11 +36,11 @@ export function practiceRecView(container) {
   const setMode = sessionStorage.getItem('j4t_practice_set') === '1'
   const returnRoute = sessionStorage.getItem('j4t_practice_return') || '/'
 
-  // Tab: 'single' (after Test A) or 'pairs' (after Test B). In infinite mode
+  // Tab: 'single' (after Test 1) or 'pairs' (after Test 2). In infinite mode
   // we let the user toggle; in set mode we lock to the matching tab.
   let tab = 'single'
   if (setMode) {
-    tab = returnRoute === '/test-b' ? 'pairs' : 'single'
+    tab = returnRoute === '/test-2' ? 'pairs' : 'single'
   }
 
   // ── State ──

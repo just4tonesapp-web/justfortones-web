@@ -2,6 +2,7 @@
 // Simple hash-based SPA router
 // ═══════════════════════════════════════
 import { stopAllAudio } from './utils/audio.js'
+import { showLoader, hideLoader } from './utils/loader.js'
 
 const routes = {}
 let currentCleanup = null
@@ -36,7 +37,16 @@ export function startRouter() {
 
     if (handler) {
       app.innerHTML = '' // clear
-      currentCleanup = handler(app) || null
+      const result = handler(app)
+      // Async views (return a Promise) get a loading spinner until they render.
+      if (result && typeof result.then === 'function') {
+        showLoader()
+        currentCleanup = null
+        result.finally(() => hideLoader())
+      } else {
+        hideLoader()
+        currentCleanup = result || null
+      }
     }
   }
 
