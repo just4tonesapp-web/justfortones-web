@@ -134,13 +134,15 @@ export function practiceType1View(container) {
           <p class="p1-done-msg">${pct >= 80
             ? 'Your ear is sharp — lovely tone discrimination!'
             : 'Great training. Keep drilling minimal pairs and the 3rd tone will start to pop out.'}</p>
-          <button class="btn btn-primary btn-lg" id="p1-again">Practice again</button>
+          <button class="btn btn-primary btn-lg" id="p1-next">Next: Speaking practice →</button>
+          <button class="btn-link p1-done-home" id="p1-again">Practice again</button>
           <button class="btn-link p1-done-home" id="p1-back">Back to home</button>
         </div>
       </div>
     `
     inject()
     document.getElementById('p1-home').addEventListener('click', () => navigate('/'))
+    document.getElementById('p1-next').addEventListener('click', () => navigate('/practice-2'))
     document.getElementById('p1-back').addEventListener('click', () => navigate('/'))
     document.getElementById('p1-again').addEventListener('click', () => {
       idx = 0; score = 0; selected = null; answered = false; build(); render()

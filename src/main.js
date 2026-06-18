@@ -21,6 +21,8 @@ import { practiceRecView } from './views/practiceRecView.js'
 import { practiceProView } from './views/practiceProView.js'
 import { practiceCharView } from './views/practiceCharView.js'
 import { practiceType1View } from './views/practiceType1View.js'
+import { practiceType2View } from './views/practiceType2View.js'
+import { practiceType3View } from './views/practiceType3View.js'
 import { historyView } from './views/historyView.js'
 import { testYView } from './views/testYView.js'
 
@@ -108,6 +110,8 @@ route('/old/test-x', guarded(testXYZView))
 route('/old/test-y', guarded(testYView))
 route('/old/report', guarded(diagnosticReportOldView))
 route('/practice-1', guarded(practiceType1View)) // Practice Type I — tone recognition (pptx slide 25)
+route('/practice-2', guarded(practiceType2View)) // Practice Type II — listen & speak (pptx slide 26)
+route('/practice-3', guarded(practiceType3View)) // Practice Type III — tone-change rules (pptx slide 27)
 route('/practice-recognition', guarded(practiceRecView))
 route('/practice-production', guarded(practiceProView))
 route('/practice-characters', guarded(practiceCharView))
