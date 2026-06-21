@@ -49,17 +49,18 @@ function makeQ(type, item) {
 // rule, B = the 一 / 不 special words. Each runs as its own page and ends on the
 // SAME completion screen; finishing A leads straight into B.
 const PARTS = [
-  { id: 'A', label: 'Practice A · two 3rd tones', types: ['33'], rules: [0] },
-  { id: 'B', label: 'Practice B · 一 and 不', types: ['yi', 'bu'], rules: [1, 2] },
+  { id: 'A', label: 'Test A · two 3rd tones', types: ['33'], rules: [0], count: 7 },
+  { id: 'B', label: 'Test B · 一 and 不', types: ['yi', 'bu'], rules: [1, 2], count: 7 },
 ]
 
 function buildPart(part) {
+  // Two separate tests: A = questions 1–7 (3+3 sandhi), B = the rest (一 / 不).
   const out = []
-  const per = part.types.length === 1 ? 6 : 3 // A: 6 sandhi · B: 3 一 + 3 不
+  const per = Math.ceil(part.count / part.types.length)
   part.types.forEach(type => {
     shuffle(TONE_CHANGE[type]).slice(0, per).forEach(item => out.push(makeQ(type, item)))
   })
-  return shuffle(out)
+  return shuffle(out).slice(0, part.count)
 }
 
 export function practiceType3View(container) {
@@ -146,7 +147,7 @@ export function practiceType3View(container) {
           <p class="p3-done-msg">${pct >= 80 ? 'You\'ve got these rules down!' : 'Review the rules at the top and try again — they\'ll stick.'}</p>
           ${last
             ? `<button class="btn btn-primary btn-lg" id="p3-again">Practice again</button>`
-            : `<button class="btn btn-primary btn-lg" id="p3-continue">Continue to Practice ${PARTS[partIdx + 1].id} →</button>`}
+            : `<button class="btn btn-primary btn-lg" id="p3-continue">Continue to Test ${PARTS[partIdx + 1].id} →</button>`}
           <button class="btn-link p3-done-home" id="p3-back">Back to home</button>
         </div>
       </div>
