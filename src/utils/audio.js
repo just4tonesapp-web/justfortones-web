@@ -44,6 +44,19 @@ function trackAudio(a) {
 }
 
 /**
+ * Play an arbitrary clip under /audio (e.g. a tone-change recording).
+ * @param {string} relPath e.g. 'tone-change/33/ni3hao3.m4a'
+ */
+export function playClip(relPath, onEnd) {
+  stopAllAudio()
+  const audio = new Audio(`${import.meta.env.BASE_URL}audio/${relPath}`)
+  trackAudio(audio)
+  if (onEnd) audio.addEventListener('ended', onEnd)
+  audio.play().catch(() => {})
+  return audio
+}
+
+/**
  * Play a synthesised pitch contour for a given tone number (1–4)
  * @returns {number} duration in seconds
  */

@@ -30,18 +30,29 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)]
 
 export function practiceType2View(container) {
   const engine = new AudioEngine()
+  // Adaptive (feedback-based): lean the word set toward the diagnostic's weakest
+  // tone, defaulting to the 3rd if no diagnostic has been taken yet.
+  const focus = +sessionStorage.getItem('j4t_focus_tone')
+  const adaptive = [1, 2, 3, 4].includes(focus)
+  const FOCUS = adaptive ? focus : 3
+  const ORD = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th' }
+  const FOCUS_BADGE = adaptive ? `<div class="prac-focus">🎯 Targeting your <strong>${ORD[FOCUS]} tone</strong></div>` : ''
   let items = buildItems()
   let idx = 0, phase = 'ready', lastRec = null, feedback = null, isRecording = false, recTimer = null
   let actx = null
 
   function buildItems() {
     const list = []
-    for (let t = 1; t <= 4; t++) {
+    // Both single-syllable words in the focus tone, then fill to 4 with contrasts.
+    SINGLES.filter(s => s.tone === FOCUS).forEach(s => list.push({ type: 'single', ...s }))
+    shuffle([1, 2, 3, 4].filter(t => t !== FOCUS)).slice(0, Math.max(0, 4 - list.length)).forEach(t => {
       const pool = SINGLES.filter(s => s.tone === t)
-      list.push({ type: 'single', ...shuffle(pool)[0] })
-    }
+      if (pool.length) list.push({ type: 'single', ...shuffle(pool)[0] })
+    })
+    // 2 two-syllable words, preferring ones that contain the focus tone.
     const keys = Object.keys(DISYLLABLE_BY_PAIR).filter(k => (DISYLLABLE_BY_PAIR[k] || []).length)
-    shuffle(keys).slice(0, 2).forEach(k => {
+    const focusKeys = keys.filter(k => +k[0] === FOCUS || +k[1] === FOCUS)
+    shuffle(focusKeys.length ? focusKeys : keys).slice(0, 2).forEach(k => {
       const e = shuffle(DISYLLABLE_BY_PAIR[k])[0]
       list.push({ type: 'pair', syl1: e.syl1, syl2: e.syl2, t1: +k[0], t2: +k[1] })
     })
@@ -68,7 +79,7 @@ export function practiceType2View(container) {
     const ok = await engine.start()
     if (!ok) { feedback = { good: false, text: 'Couldn\'t access the microphone — allow mic access and try again.' }; phase = 'done'; render(); return }
     isRecording = true; phase = 'recording'; render()
-    recTimer = setTimeout(() => stopRec(item), 5000) // safety max 5s
+    recTimer = setTimeout(() => stopRec(item), 20000) // long safety cap only — the user stops via the button
   }
 
   function stopRec(item) {
@@ -101,8 +112,9 @@ export function practiceType2View(container) {
          <div class="p2-meaning">2-syllable word</div>`
 
     container.innerHTML = `
-      <div class="app-shell shell-top-center">
+      <div class="app-shell shell-top-center practice-shell">
         <div class="back-row"><button class="app-logo" id="p2-home">Just4Tones</button></div>
+        ${FOCUS_BADGE}
 
         <div class="p2-progress">Exercise ${idx + 1} of ${items.length} · Say it out loud</div>
 
@@ -148,7 +160,7 @@ export function practiceType2View(container) {
 
   function renderDone() {
     container.innerHTML = `
-      <div class="app-shell shell-top-center">
+      <div class="app-shell shell-top-center practice-shell">
         <div class="back-row"><button class="app-logo" id="p2-home">Just4Tones</button></div>
         <div class="p2-done card animate-in text-center">
           <div class="p2-done-emoji">🗣️</div>

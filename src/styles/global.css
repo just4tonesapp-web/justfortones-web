@@ -91,6 +91,41 @@ body::before {
 .shell-top-center > :nth-child(2) { margin-top: auto; }
 .shell-top-center::after { content: ''; margin-bottom: auto; }
 
+/* ── Premium "Adaptive Practice" ambient background ──
+   Distinguishes the practice section (slides 25–27) from the diagnostic tests:
+   a deeper navy with a soft violet glow up top and a faint sky glow below.
+   Full-viewport fixed layer painted behind the content. */
+.practice-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 520px at 50% -10%, rgba(129, 110, 247, 0.22), transparent 60%),
+    radial-gradient(760px 480px at 95% 112%, rgba(56, 189, 248, 0.12), transparent 58%),
+    linear-gradient(165deg, #0a0e1f 0%, #121833 52%, #0b1124 100%);
+}
+
+/* ── Adaptive-practice focus badge ──
+   Shown at the top of a practice when it's drilling the tone the diagnostic
+   flagged as weakest, so the "feedback-based" link is visible to the learner. */
+.prac-focus {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #c7b8ff;
+  background: rgba(129, 110, 247, 0.14);
+  border: 1px solid rgba(129, 110, 247, 0.34);
+}
+.prac-focus strong { color: #fff; font-weight: 700; }
+
 /* ── Global account bar (History · Log out) — fixed top-right on every page ── */
 .account-bar {
   position: fixed;

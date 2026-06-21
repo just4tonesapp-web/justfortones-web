@@ -79,14 +79,14 @@ function renderList(results, filter) {
   const total = filtered.length
   const passed = filtered.filter(r => r.passed).length
 
-  const rows = filtered.map(r => {
+  const rows = filtered.map((r, i) => {
     const pct = Math.round((r.score / r.total) * 100)
     const icon = r.passed ? '✅' : '❌'
     const label = TESTS[r.test_type]?.label || `Test ${r.test_type}`
     const date = formatDate(r.created_at)
     const barColor = r.passed ? 'var(--correct)' : 'var(--incorrect)'
     return `
-      <div class="hist-row">
+      <button class="hist-row" data-idx="${i}">
         <span class="hist-status">${icon}</span>
         <div class="hist-info">
           <div class="hist-row-top">
@@ -98,7 +98,8 @@ function renderList(results, filter) {
           </div>
           <span class="hist-date">${date}</span>
         </div>
-      </div>`
+        <span class="hist-chevron">›</span>
+      </button>`
   }).join('')
 
   body.innerHTML = `
@@ -111,6 +112,14 @@ function renderList(results, filter) {
     </div>
     <div class="hist-list">${rows}</div>
   `
+
+  // Tap a row to open that attempt's full report.
+  body.querySelectorAll('.hist-row').forEach(el => {
+    el.addEventListener('click', () => {
+      sessionStorage.setItem('j4t_attempt', JSON.stringify(filtered[+el.dataset.idx]))
+      navigate('/attempt')
+    })
+  })
 }
 
 const scopedCSS = `
@@ -203,12 +212,16 @@ const scopedCSS = `
   .hist-list { display: flex; flex-direction: column; gap: 4px; }
 
   .hist-row {
-    display: flex;
-    gap: 12px;
-    padding: 12px 0;
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 12px 4px; background: transparent; border: none;
     border-bottom: 1px solid var(--card-border);
+    font-family: inherit; color: inherit; text-align: left;
+    cursor: pointer; transition: background 0.15s; -webkit-tap-highlight-color: transparent;
   }
   .hist-row:last-child { border-bottom: none; }
+  .hist-row:hover { background: rgba(56,189,248,0.05); }
+  .hist-chevron { font-size: 1.4rem; color: var(--text-muted); flex-shrink: 0; }
+  .hist-row:hover .hist-chevron { color: var(--accent); }
   .hist-status { font-size: 1.1rem; flex-shrink: 0; line-height: 1.4; }
   .hist-info { flex: 1; min-width: 0; }
   .hist-row-top {

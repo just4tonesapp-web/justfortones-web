@@ -202,7 +202,11 @@ export async function diagnosticReportView(container) {
 
   document.getElementById('cr-home').addEventListener('click', () => navigate('/'))
   document.getElementById('cr-next').addEventListener('click', () => {
-    if (isComplete) navigate('/practice-1')
+    if (isComplete) {
+      // Adaptive: hand the weakest tone to the practices so they drill it.
+      if (focusTone) sessionStorage.setItem('j4t_focus_tone', String(focusTone))
+      navigate('/practice-1')
+    }
     else if (!a) navigate('/test-1')
     else if (!b) navigate('/test-2')
     else navigate('/test-3')

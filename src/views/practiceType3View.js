@@ -1,57 +1,86 @@
 // ═══════════════════════════════════════════════════════════════════
 // Practice Type III — Tone Change Rules / 变调  (pptx slide 27)
-//   Goal (目标): help learners remember the tone-sandhi rules.
-//   1. Explain the rules.  2. Quiz: pick the ACTUAL pronunciation.
-//   Feedback: right/wrong + the correct pinyin (and best-effort audio).
+//   Goal (目标): remember the sandhi rules. Now driven by 60 REAL recordings
+//   (20 each: 3+3, 一, 不). Per word: hear the real pronunciation, choose how
+//   the tone changes, then get feedback + replay.
 // ═══════════════════════════════════════════════════════════════════
 import { navigate } from '../router.js'
-import { applyTone } from '../utils/pinyin.js'
-import { playSyllable, stopAllAudio } from '../utils/audio.js'
-
-// Play two syllables (at their sandhi tones) in sequence — best effort.
-function say(pairs) {
-  stopAllAudio()
-  if (!pairs.length) return
-  playSyllable(pairs[0][0], pairs[0][1])
-  if (pairs[1]) setTimeout(() => playSyllable(pairs[1][0], pairs[1][1]), 520)
-}
+import { applyTone, shuffle } from '../utils/pinyin.js'
+import { playClip, stopAllAudio } from '../utils/audio.js'
+import { TONE_CHANGE } from '../utils/toneChangeWords.js'
 
 const RULES = [
-  { tag: '3 + 3', title: 'Two 3rd tones', text: 'When a 3rd tone is followed by another 3rd tone, the <b>first</b> one becomes a <b>2nd</b> tone.', eg: '你好 nǐ + hǎo → <b>ní hǎo</b>' },
+  { tag: '3 + 3', title: 'Two 3rd tones', text: 'When a 3rd tone is followed by another 3rd tone, the <b>first</b> becomes a <b>2nd</b> tone.', eg: '你好 nǐ + hǎo → <b>ní hǎo</b>' },
   { tag: '一 yī', title: 'The number 一', text: '一 becomes a <b>2nd</b> tone before a 4th tone, and a <b>4th</b> tone before a 1st / 2nd / 3rd tone.', eg: '一个 → <b>yí</b> gè · 一天 → <b>yì</b> tiān' },
   { tag: '不 bù', title: 'The negative 不', text: '不 becomes a <b>2nd</b> tone before a 4th tone; otherwise it stays a <b>4th</b> tone.', eg: '不是 → <b>bú</b> shì · 不好 → <b>bù</b> hǎo' },
 ]
 
-// q: question; options: choices; correct: index; sandhi: [[syl,tone],...] actual pronunciation; why.
-const QUESTIONS = [
-  { word: '你好', q: 'How is 你好 (nǐ + hǎo) actually said?', options: ['nǐ hǎo (3 + 3)', 'ní hǎo (2 + 3)'], correct: 1, sandhi: [['ni', 2], ['hao', 3]], why: 'Two 3rd tones → the first becomes a 2nd tone.' },
-  { word: '很好', q: 'How is 很好 (hěn + hǎo) actually said?', options: ['hén hǎo (2 + 3)', 'hěn hǎo (3 + 3)'], correct: 0, sandhi: [['hen', 2], ['hao', 3]], why: 'Two 3rd tones → the first becomes a 2nd tone.' },
-  { word: '老虎', q: 'How is 老虎 (lǎo + hǔ) actually said?', options: ['lǎo hǔ (3 + 3)', 'láo hǔ (2 + 3)'], correct: 1, sandhi: [['lao', 2], ['hu', 3]], why: 'Two 3rd tones → the first becomes a 2nd tone.' },
-  { word: '一个', q: '一 in 一个 (one + 个, 4th tone) becomes…', options: ['1st tone (yī)', '2nd tone (yí)', '4th tone (yì)'], correct: 1, sandhi: [['yi', 2], ['ge', 4]], why: '一 before a 4th tone → 2nd tone (yí gè).' },
-  { word: '一天', q: '一 in 一天 (one + 天, 1st tone) becomes…', options: ['2nd tone (yí)', '4th tone (yì)'], correct: 1, sandhi: [['yi', 4], ['tian', 1]], why: '一 before a 1st/2nd/3rd tone → 4th tone (yì tiān).' },
-  { word: '一起', q: '一 in 一起 (one + 起, 3rd tone) becomes…', options: ['2nd tone (yí)', '4th tone (yì)'], correct: 1, sandhi: [['yi', 4], ['qi', 3]], why: '一 before a 1st/2nd/3rd tone → 4th tone (yì qǐ).' },
-  { word: '不是', q: '不 in 不是 (not + 是, 4th tone) becomes…', options: ['2nd tone (bú)', '4th tone (bù)'], correct: 0, sandhi: [['bu', 2], ['shi', 4]], why: '不 before a 4th tone → 2nd tone (bú shì).' },
-  { word: '不要', q: '不 in 不要 (not + 要, 4th tone) becomes…', options: ['4th tone (bù)', '2nd tone (bú)'], correct: 1, sandhi: [['bu', 2], ['yao', 4]], why: '不 before a 4th tone → 2nd tone (bú yào).' },
-  { word: '不好', q: '不 in 不好 (not + 好, 3rd tone) stays…', options: ['2nd tone (bú)', '4th tone (bù)'], correct: 1, sandhi: [['bu', 4], ['hao', 3]], why: '不 keeps its 4th tone before a non-4th tone (bù hǎo).' },
+function parse(f) {
+  const m = f.match(/^([a-z]+)(\d)([a-z]+)(\d)$/)
+  return { s1: m[1], t1: +m[2], s2: m[3], t2: +m[4] }
+}
+
+const ORD = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th' }
+
+function makeQ(type, item) {
+  const { s1, t1, s2, t2 } = parse(item.f)
+  const file = `tone-change/${type}/${item.f}.m4a`
+  const c2 = item.c.slice(-1) // second character, e.g. 个 / 好
+  if (type === '33') {
+    const written = `${applyTone(s1, 3)} ${applyTone(s2, 3)}`
+    const said = `${applyTone(s1, 2)} ${applyTone(s2, 3)}`
+    return { chars: item.c, file, q: `How is ${item.c} (${written}) actually said?`,
+      options: [`${written}  (3 + 3)`, `${said}  (2 + 3)`], correct: 1, said,
+      why: 'Two 3rd tones in a row → the first becomes a 2nd tone.' }
+  }
+  if (type === 'yi') {
+    const said = `${applyTone('yi', t1)} ${applyTone(s2, t2)}`
+    return { chars: item.c, file, q: `一 in ${item.c} (一 + ${c2}, ${ORD[t2]} tone) becomes…`,
+      options: ['1st tone (yī)', '2nd tone (yí)', '4th tone (yì)'], correct: t1 === 2 ? 1 : 2, said,
+      why: t1 === 2 ? `一 before a 4th tone → 2nd tone (${said}).` : `一 before a ${ORD[t2]} tone → 4th tone (${said}).` }
+  }
+  const said = `${applyTone('bu', t1)} ${applyTone(s2, t2)}`
+  return { chars: item.c, file, q: `不 in ${item.c} (不 + ${c2}, ${ORD[t2]} tone) becomes…`,
+    options: ['2nd tone (bú)', '4th tone (bù)'], correct: t1 === 2 ? 0 : 1, said,
+    why: t1 === 2 ? `不 before a 4th tone → 2nd tone (${said}).` : `不 keeps its 4th tone before a ${ORD[t2]} tone (${said}).` }
+}
+
+// Type III is split into two short practices (pptx slide 28): A = the 3+3 sandhi
+// rule, B = the 一 / 不 special words. Each runs as its own page and ends on the
+// SAME completion screen; finishing A leads straight into B.
+const PARTS = [
+  { id: 'A', label: 'Practice A · two 3rd tones', types: ['33'], rules: [0] },
+  { id: 'B', label: 'Practice B · 一 and 不', types: ['yi', 'bu'], rules: [1, 2] },
 ]
 
+function buildPart(part) {
+  const out = []
+  const per = part.types.length === 1 ? 6 : 3 // A: 6 sandhi · B: 3 一 + 3 不
+  part.types.forEach(type => {
+    shuffle(TONE_CHANGE[type]).slice(0, per).forEach(item => out.push(makeQ(type, item)))
+  })
+  return shuffle(out)
+}
+
 export function practiceType3View(container) {
+  let partIdx = 0, part = PARTS[0]
+  let qs = buildPart(part)
   let idx = 0, score = 0, answered = false, selected = null
 
   render()
 
   function render() {
-    if (idx >= QUESTIONS.length) return renderDone()
-    const q = QUESTIONS[idx]
+    if (idx >= qs.length) return renderDone()
+    const q = qs[idx]
 
     container.innerHTML = `
-      <div class="app-shell shell-top-center">
+      <div class="app-shell shell-top-center practice-shell">
         <div class="back-row"><button class="app-logo" id="p3-home">Just4Tones</button></div>
 
         ${idx === 0 ? `
         <div class="p3-rules card animate-in">
-          <div class="p3-rules-head">Tone changes (变调)</div>
-          ${RULES.map(r => `
+          <div class="p3-rules-head">${part.label}</div>
+          ${part.rules.map(ri => RULES[ri]).map(r => `
             <div class="p3-rule">
               <span class="p3-rule-tag">${r.tag}</span>
               <div class="p3-rule-body"><div class="p3-rule-title">${r.title}</div><p>${r.text}</p><p class="p3-rule-eg">${r.eg}</p></div>
@@ -59,8 +88,8 @@ export function practiceType3View(container) {
         </div>` : ''}
 
         <div class="p3-head">
-          <div class="p3-progress">Question ${idx + 1} of ${QUESTIONS.length}</div>
-          <div class="p3-word">${q.word}</div>
+          <div class="p3-progress">${part.label} · Question ${idx + 1} of ${qs.length}</div>
+          <div class="p3-word">${q.chars}</div>
           <p class="p3-q">${q.q}</p>
         </div>
 
@@ -91,32 +120,33 @@ export function practiceType3View(container) {
       })
       const fb = document.getElementById('p3-feedback')
       fb.className = `p3-feedback ${ok ? 'good' : 'bad'}`
-      const correctPy = q.sandhi.map(([s, t]) => applyTone(s, t)).join(' ')
-      fb.innerHTML = `${ok ? '✓ Correct!' : '✗ Not quite.'} It's <strong>${correctPy}</strong>. ${q.why}
-        <button class="p3-hear" id="p3-hear">🔊 Hear it</button>`
-      document.getElementById('p3-hear').addEventListener('click', () => say(q.sandhi))
-      say(q.sandhi)
+      fb.innerHTML = `${ok ? '✓ Correct!' : '✗ Not quite.'} It's <strong>${q.said}</strong>. ${q.why}
+        <button class="p3-hear" id="p3-hear">🔊 Hear it again</button>`
+      document.getElementById('p3-hear').addEventListener('click', () => playClip(q.file))
       const next = document.getElementById('p3-next')
       next.classList.remove('hidden')
-      next.textContent = idx + 1 >= QUESTIONS.length ? 'See results →' : 'Next →'
+      next.textContent = idx + 1 >= qs.length ? 'See results →' : 'Next →'
     }))
 
-    document.getElementById('p3-next').addEventListener('click', () => {
-      idx++; answered = false; selected = null; render()
-    })
+    document.getElementById('p3-next').addEventListener('click', () => { idx++; answered = false; selected = null; render() })
   }
 
   function renderDone() {
-    const pct = Math.round((score / QUESTIONS.length) * 100)
+    const pct = Math.round((score / qs.length) * 100)
+    const last = partIdx >= PARTS.length - 1
+    // Identical completion screen for both A and B — only the primary button differs.
     container.innerHTML = `
-      <div class="app-shell shell-top-center">
+      <div class="app-shell shell-top-center practice-shell">
         <div class="back-row"><button class="app-logo" id="p3-home">Just4Tones</button></div>
         <div class="p3-done card animate-in text-center">
           <div class="p3-done-emoji">${pct >= 80 ? '🎉' : '📚'}</div>
+          <div class="p3-done-part">${part.label}</div>
           <h1>Tone-change practice complete</h1>
-          <p class="p3-done-score">${score} / ${QUESTIONS.length}</p>
-          <p class="p3-done-msg">${pct >= 80 ? 'You\'ve got the sandhi rules down!' : 'Review the rules at the top and try again — they\'ll stick.'}</p>
-          <button class="btn btn-primary btn-lg" id="p3-again">Practice again</button>
+          <p class="p3-done-score">${score} / ${qs.length}</p>
+          <p class="p3-done-msg">${pct >= 80 ? 'You\'ve got these rules down!' : 'Review the rules at the top and try again — they\'ll stick.'}</p>
+          ${last
+            ? `<button class="btn btn-primary btn-lg" id="p3-again">Practice again</button>`
+            : `<button class="btn btn-primary btn-lg" id="p3-continue">Continue to Practice ${PARTS[partIdx + 1].id} →</button>`}
           <button class="btn-link p3-done-home" id="p3-back">Back to home</button>
         </div>
       </div>
@@ -124,7 +154,15 @@ export function practiceType3View(container) {
     inject()
     document.getElementById('p3-home').addEventListener('click', () => navigate('/'))
     document.getElementById('p3-back').addEventListener('click', () => navigate('/'))
-    document.getElementById('p3-again').addEventListener('click', () => { idx = 0; score = 0; answered = false; selected = null; render() })
+    if (last) {
+      document.getElementById('p3-again').addEventListener('click', () => {
+        partIdx = 0; part = PARTS[0]; qs = buildPart(part); idx = 0; score = 0; answered = false; selected = null; render()
+      })
+    } else {
+      document.getElementById('p3-continue').addEventListener('click', () => {
+        partIdx++; part = PARTS[partIdx]; qs = buildPart(part); idx = 0; score = 0; answered = false; selected = null; render()
+      })
+    }
   }
 
   function inject() {
@@ -153,8 +191,14 @@ const scopedCSS = `
 
   .p3-head { text-align: center; margin-bottom: 18px; }
   .p3-progress { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 10px; }
-  .p3-word { font-size: 3rem; font-weight: 700; line-height: 1; margin-bottom: 10px; }
-  .p3-q { font-size: 1rem; color: var(--text-secondary); }
+  .p3-word { font-size: 3.2rem; font-weight: 700; line-height: 1; margin-bottom: 6px; }
+  .p3-sub { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 12px; }
+  .p3-listen {
+    background: var(--surface); border: 1px solid var(--card-border); color: var(--text-primary);
+    border-radius: 24px; padding: 8px 18px; font-family: inherit; font-size: 0.9rem; cursor: pointer; transition: all 0.2s;
+  }
+  .p3-listen:hover { border-color: var(--accent); color: var(--accent); }
+  .p3-q { font-size: 1rem; color: var(--text-secondary); margin-top: 16px; }
 
   .p3-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
   .p3-opt {
@@ -179,6 +223,7 @@ const scopedCSS = `
 
   .p3-done { padding: 32px 24px; }
   .p3-done-emoji { font-size: 3rem; margin-bottom: 8px; }
+  .p3-done-part { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); font-weight: 600; margin-bottom: 6px; }
   .p3-done h1 { font-size: 1.4rem; margin-bottom: 10px; }
   .p3-done-score { font-size: 2.2rem; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
   .p3-done-msg { color: var(--text-secondary); line-height: 1.55; margin-bottom: 22px; }

@@ -24,6 +24,7 @@ import { practiceType1View } from './views/practiceType1View.js'
 import { practiceType2View } from './views/practiceType2View.js'
 import { practiceType3View } from './views/practiceType3View.js'
 import { historyView } from './views/historyView.js'
+import { attemptReportView } from './views/attemptReportView.js'
 import { testYView } from './views/testYView.js'
 
 // ── Auth state ──
@@ -98,6 +99,7 @@ route('/test-x', guarded(testXYZView))
 route('/test-y', guarded(testYView))
 route('/report', guarded(diagnosticReportView))
 route('/history', guarded(historyView))
+route('/attempt', guarded(attemptReportView)) // per-attempt report opened from History
 
 // ── Legacy "old" flow (snapshot of pre-redesign UI) ──
 route('/old', guarded(homeViewOld))
