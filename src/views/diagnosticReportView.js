@@ -101,30 +101,36 @@ export async function diagnosticReportView(container) {
     ? NATURAL_ORDER.find(t => focusPool.includes(t)) || focusPool[0]
     : null
 
-  // ── Personalised prose (slide 21 cadence) ──
-  let proseZh = '', proseEn = ''
-  if (isComplete) {
-    if (strong.length) {
-      const t = strong[0]
-      proseZh += `在四声中，你对于<strong style="color:${TONE_COLOR[t]}">${TONE_ZH[t]}</strong>真的很敏锐，不仅能听出双音节，还能听出单音节，并且说都说得很好。`
-      proseEn += `Across the four tones, you are remarkably sharp on the <strong style="color:${TONE_COLOR[t]}">${TONE_EN[t]}</strong> — you hear it in single and 2-syllable words, and you can produce it well.`
-    }
-    if (mid.length) {
-      const names = mid.map(t => TONE_ZH[t]).join('、')
-      proseZh += `<br>然后 <strong>${names}</strong>，次之。`
-      proseEn += ` Your ${mid.map(t => TONE_EN[t]).join(' & ')} ${mid.length > 1 ? 'come' : 'comes'} next.`
-    }
-    if (weak.length) {
-      const t = weak[0]
-      proseZh += `<br>你的<strong style="color:${TONE_COLOR[t]}">${TONE_ZH[t]}</strong>，确实需要加强。`
-      proseEn += ` Your <strong style="color:${TONE_COLOR[t]}">${TONE_EN[t]}</strong> still needs strengthening.`
-    }
+  // ── Slide 6–10 feedback ──
+  // Per-tone description grouped by tier (good / nascent / needs work), then ONE
+  // recommendation (the worst tier, tie-broken by the 4 > 1 > 2 > 3 natural
+  // distribution order — already what focusTone computes), then that tone's
+  // pronunciation guidance (from the deck's speaker notes on slide 6).
+  const ORD = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th' }
+  const ordList = (arr) => {
+    const o = arr.slice().sort((x, y) => x - y).map(t => ORD[t])
+    if (o.length <= 1) return o[0] || ''
+    if (o.length === 2) return `${o[0]} and ${o[1]}`
+    return `${o.slice(0, -1).join(', ')} and ${o[o.length - 1]}`
+  }
+  const tonesPhrase = (arr) => `${ordList(arr)} tone${arr.length > 1 ? 's' : ''}`
+  const TONE_GUIDANCE = {
+    1: 'Maintain a steady high pitch — nearly at the top of your voice range. Imagine you are an opera singer using your highest pitch!',
+    2: 'Start in the middle of your voice range and rise quickly to the top. Think of how you ask “What?” in English — that’s the contour of the 2nd tone!',
+    3: 'Lower your chin: dip to the lowest of your range, then rise quickly to the middle. Don’t prolong it, or it will sound like a 2nd tone.',
+    4: 'Start at the top of your range (just like the 1st tone), then fall sharply all the way down. Imagine saying “No!” decisively in English — that’s the 4th tone.',
   }
 
-  let recoZh = '', recoEn = ''
+  const descLines = []
+  if (isComplete) {
+    if (strong.length) descLines.push(`You are really good at recognizing and speaking the <strong>${tonesPhrase(strong)}</strong>. Bravo!`)
+    if (mid.length)    descLines.push(`You demonstrate a nascent ability with the <strong>${tonesPhrase(mid)}</strong>.`)
+    if (weak.length)   descLines.push(`Some work is still needed on your <strong>${tonesPhrase(weak)}</strong>.`)
+  }
+
+  let recoEn = ''
   if (focusTone) {
-    recoZh = `我们建议你选择一个突破口 — 尤其是在说含有<strong style="color:${TONE_COLOR[focusTone]}">${TONE_ZH[focusTone]}</strong>双音节词的时候。请你从<strong>听</strong>开始，专注在${TONE_ZH[focusTone]}的学习上。这可能是反直觉，但是如果你想说得更好，你得先听得更好。`
-    recoEn = `We recommend picking one breakthrough point — especially with 2-syllable words containing the <strong style="color:${TONE_COLOR[focusTone]}">${TONE_EN[focusTone]}</strong>. Start with <strong>listening</strong>, and focus on this tone first. It may feel counter-intuitive, but to <em>speak</em> better, you must first <em>hear</em> better.`
+    recoEn = `Our recommendation is to focus on the <strong style="color:${TONE_COLOR[focusTone]}">${ORD[focusTone]} tone</strong> first, because of this tone’s distribution in Chinese. You’ll see huge gains immediately.`
   }
 
   // ── Per-test sub-reports (slide 21 "Open Report of X") ──
@@ -157,10 +163,16 @@ export async function diagnosticReportView(container) {
             but we can absolutely do this.
           </p>
 
-          <p class="cr-en cr-rank">${proseEn}</p>
+          <div class="cr-desc">
+            ${descLines.map(l => `<p class="cr-en cr-desc-line">${l}</p>`).join('')}
+          </div>
 
           ${focusTone ? `
             <p class="cr-en cr-reco">${recoEn}</p>
+            <div class="cr-guidance">
+              <div class="cr-guidance-title" style="color:${TONE_COLOR[focusTone]}">The ${ORD[focusTone]} tone</div>
+              <p class="cr-guidance-text">${TONE_GUIDANCE[focusTone]}</p>
+            </div>
             <p class="cr-encourage">You are getting there.</p>
           ` : `
             <p class="cr-en cr-reco">You demonstrated strong tone skills across the board — are you a native speaker? 👀</p>
@@ -246,12 +258,37 @@ const scopedCSS = `
     border-left: 2px solid var(--card-border);
     margin-top: 14px;
   }
+  .cr-desc {
+    margin: 14px 0;
+    padding-left: 12px;
+    border-left: 2px solid var(--card-border);
+  }
+  .cr-desc-line { margin: 0 0 8px; }
+  .cr-desc-line:last-child { margin-bottom: 0; }
   .cr-reco {
     background: var(--accent-glow);
     border: 1px solid rgba(56,189,248,0.3);
     border-radius: var(--radius-sm);
     padding: 12px 14px;
     border-left: none;
+  }
+  .cr-guidance {
+    margin: 12px 0 0;
+    padding: 14px 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+  }
+  .cr-guidance-title {
+    font-size: 1.02rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .cr-guidance-text {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin: 0;
   }
   .cr-en strong, .cr-zh strong { font-weight: 700; }
   .cr-en em { font-style: italic; color: var(--accent); }

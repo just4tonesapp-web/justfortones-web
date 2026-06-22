@@ -26,12 +26,14 @@ const TONE_COLOR = { 1: 'var(--tone1)', 2: 'var(--tone2)', 3: 'var(--tone3)', 4:
 // Natural distribution order — tiebreak for the worst band.
 const NATURAL_ORDER = [4, 1, 2, 3]
 
-// ── Per-tone characteristic snippets used in the recommendation paragraph ──
+// ── Per-tone pronunciation guidance shown in the recommendation paragraph ──
+// Verbatim from the deck's slide-6 speaker notes (kept in sync with the same
+// TONE_GUIDANCE map in diagnosticReportView.js).
 const TONE_FEATURE = {
-  1: 'The 1st tone is high and flat — your voice stays level, like singing one held note.',
-  2: 'The 2nd tone rises from mid to high — like asking a question in English.',
-  3: 'The 3rd tone dips low then rises — the trickiest one for most learners.',
-  4: 'The 4th tone falls sharply from high to low — sounds firm, almost commanding.',
+  1: 'Maintain a steady high pitch — nearly at the top of your voice range. Imagine you are an opera singer using your highest pitch!',
+  2: 'Start in the middle of your voice range and rise quickly to the top. Think of how you ask “What?” in English — that’s the contour of the 2nd tone!',
+  3: 'Lower your chin: dip to the lowest of your range, then rise quickly to the middle. Don’t prolong it, or it will sound like a 2nd tone.',
+  4: 'Start at the top of your range (just like the 1st tone), then fall sharply all the way down. Imagine saying “No!” decisively in English — that’s the 4th tone.',
 }
 
 // ═══════════════════════════════════════════════════════════════════
