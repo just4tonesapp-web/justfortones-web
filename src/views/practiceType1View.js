@@ -1,9 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════
 // Practice Type I — Tone Recognition  (pptx slide 25)
 //   Goal (目标): train the ear to hear/distinguish tones.
-//   Round 1: 6 SINGLE-syllable minimal pairs — "Which one is the 3rd tone?"
-//   Round 2: 6 TWO-syllable words — hear the word, pick the tone pattern.
-//   Each round is a group of 6.
+//   Two SEPARATE 6-question practices the learner picks via buttons:
+//     • 1-syllable words — minimal pairs, "which sound is the Nth tone?"
+//     • 2-syllable words — hear the word, pick the tone pattern.
+//   Each is its own group of 6 (shown as "1 of 6", not a combined 1 of 12),
+//   and adapts to the diagnostic's weakest tone.
 // ═══════════════════════════════════════════════════════════════════
 import { navigate } from '../router.js'
 import { SYLLABLE_POOL, applyTone, shuffle, hasCharacter } from '../utils/pinyin.js'
@@ -13,15 +15,16 @@ import { DISYLLABLE_BY_PAIR } from '../utils/disyllableManifest.js'
 
 const ORD = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th' }
 const TONE_HINT = { 1: '─ high & flat', 2: '／ rising', 3: '∨ dip', 4: '＼ falling' }
+const ROUND = 6 // each practice is a group of 6
 
 export function practiceType1View(container) {
   // Adaptive (feedback-based): drill the tone the diagnostic flagged as weakest.
-  // Falls back to the 3rd tone (the classic trouble tone) if no diagnostic yet.
   const focus = +sessionStorage.getItem('j4t_focus_tone')
   const adaptive = [1, 2, 3, 4].includes(focus)
   const TARGET = adaptive ? focus : 3
   const TARGET_HINT = TONE_HINT[TARGET]
   const FOCUS_BADGE = adaptive ? `<div class="prac-focus">🎯 Targeting your <strong>${ORD[TARGET]} tone</strong></div>` : ''
+
   function pickSyllable(tones) {
     // ALWAYS require a real character — never fall back to combos like bei2 / "_x"
     // that have a recording but aren't real Chinese syllables.
@@ -38,41 +41,86 @@ export function practiceType1View(container) {
     return shuffle([{ t1, t2 }, ...shuffle(all).slice(0, 3)])
   }
 
-  let items = []
-  function build() {
-    items = []
-    // Round 1 — 6 single-syllable minimal pairs (target tone vs the other three, ×2)
+  // ── 1-syllable set: 6 minimal pairs (target tone vs the other three, ×2) ──
+  function buildSingle() {
     const others = [1, 2, 3, 4].filter(t => t !== TARGET)
-    shuffle([...others, ...others]).forEach(d => {
+    return shuffle([...others, ...others]).slice(0, ROUND).map(d => {
       const tones = [TARGET, d]
-      items.push({ type: 'single', syl: pickSyllable(tones), tones: shuffle(tones) })
-    })
-    // Round 2 — 6 two-syllable words, preferring words that CONTAIN the focus tone
-    const keys = Object.keys(DISYLLABLE_BY_PAIR).filter(k => (DISYLLABLE_BY_PAIR[k] || []).length)
-    const focusKeys = keys.filter(k => +k[0] === TARGET || +k[1] === TARGET)
-    shuffle(focusKeys.length >= 6 ? focusKeys : keys).slice(0, 6).forEach(k => {
-      const e = shuffle(DISYLLABLE_BY_PAIR[k])[0]
-      const t1 = +k[0], t2 = +k[1]
-      items.push({ type: 'pair', syl1: e.syl1, syl2: e.syl2, t1, t2, choices: pairChoices(t1, t2) })
+      return { type: 'single', syl: pickSyllable(tones), tones: shuffle(tones) }
     })
   }
-  build()
-  const TOTAL = items.length
+  // ── 2-syllable set: 6 words, preferring ones that contain the focus tone ──
+  function buildPair() {
+    const keys = Object.keys(DISYLLABLE_BY_PAIR).filter(k => (DISYLLABLE_BY_PAIR[k] || []).length)
+    const focusKeys = keys.filter(k => +k[0] === TARGET || +k[1] === TARGET)
+    return shuffle(focusKeys.length >= ROUND ? focusKeys : keys).slice(0, ROUND).map(k => {
+      const e = shuffle(DISYLLABLE_BY_PAIR[k])[0]
+      const t1 = +k[0], t2 = +k[1]
+      return { type: 'pair', syl1: e.syl1, syl2: e.syl2, t1, t2, choices: pairChoices(t1, t2) }
+    })
+  }
 
+  let mode = null // null = chooser · 'single' · 'pair'
+  let items = []
   let idx = 0, score = 0, selected = null, answered = false
+  const completed = { single: false, pair: false }
 
-  render()
+  renderChooser()
+
+  function start(m) {
+    mode = m
+    items = m === 'single' ? buildSingle() : buildPair()
+    idx = 0; score = 0; selected = null; answered = false
+    render()
+  }
 
   function render() {
-    if (idx >= TOTAL) return renderDone()
+    if (idx >= items.length) return renderDone()
     selected = null; answered = false
     const q = items[idx]
     if (q.type === 'single') renderSingle(q)
     else renderPair(q)
   }
 
-  // ── Round 1: single-syllable "which is the 3rd tone?" ──
+  // ── Chooser: pick the 1-syllable or 2-syllable practice ──
+  function renderChooser() {
+    container.innerHTML = `
+      <div class="app-shell shell-top-center practice-shell">
+        <div class="back-row"><button class="app-logo" id="p1-home">Just4Tones</button></div>
+        ${FOCUS_BADGE}
+        <div class="p1-head">
+          <h1 class="p1-q">Tone Recognition</h1>
+          <p class="p1-sub">Train your ear. Pick a set — each is 6 quick listening exercises.</p>
+        </div>
+        <div class="p1-modes">
+          <button class="p1-mode" id="p1-mode-single">
+            <span class="p1-mode-emoji">🔊</span>
+            <span class="p1-mode-text">
+              <span class="p1-mode-title">1-syllable words${completed.single ? ' ✓' : ''}</span>
+              <span class="p1-mode-sub">Which sound is the ${ORD[TARGET]} tone? · 6 exercises</span>
+            </span>
+          </button>
+          <button class="p1-mode" id="p1-mode-pair">
+            <span class="p1-mode-emoji">🎵</span>
+            <span class="p1-mode-text">
+              <span class="p1-mode-title">2-syllable words${completed.pair ? ' ✓' : ''}</span>
+              <span class="p1-mode-sub">Hear the word, pick the tone pattern · 6 exercises</span>
+            </span>
+          </button>
+        </div>
+        <button class="btn-link p1-done-home" id="p1-skip">Skip to speaking practice →</button>
+      </div>
+    `
+    inject()
+    document.getElementById('p1-home').addEventListener('click', () => { stopAllAudio(); navigate('/') })
+    document.getElementById('p1-mode-single').addEventListener('click', () => start('single'))
+    document.getElementById('p1-mode-pair').addEventListener('click', () => start('pair'))
+    document.getElementById('p1-skip').addEventListener('click', () => navigate('/practice-2'))
+  }
+
+  // ── 1-syllable: "which is the Nth tone?" ──
   function renderSingle(q) {
+    const TOTAL = items.length
     const correctIdx = q.tones.indexOf(TARGET)
     container.innerHTML = `
       <div class="app-shell shell-top-center practice-shell">
@@ -128,8 +176,9 @@ export function practiceType1View(container) {
     })
   }
 
-  // ── Round 2: two-syllable word — identify the tone pattern ──
+  // ── 2-syllable: identify the tone pattern ──
   function renderPair(q) {
+    const TOTAL = items.length
     const correctIdx = q.choices.findIndex(c => c.t1 === q.t1 && c.t2 === q.t2)
     container.innerHTML = `
       <div class="app-shell shell-top-center practice-shell">
@@ -178,26 +227,36 @@ export function practiceType1View(container) {
   }
 
   function renderDone() {
-    const pct = Math.round((score / TOTAL) * 100)
+    completed[mode] = true
+    const total = items.length
+    const pct = Math.round((score / total) * 100)
+    const other = mode === 'single' ? 'pair' : 'single'
+    const otherLabel = other === 'single' ? '1-syllable words' : '2-syllable words'
+    const otherDone = completed[other]
     container.innerHTML = `
       <div class="app-shell shell-top-center practice-shell">
         <div class="back-row"><button class="app-logo" id="p1-home">Just4Tones</button></div>
         <div class="p1-done card animate-in text-center">
           <div class="p1-done-emoji">${pct >= 80 ? '🎉' : pct >= 50 ? '👂' : '💪'}</div>
           <h1>Practice complete</h1>
-          <p class="p1-done-score">${score} / ${TOTAL}</p>
+          <p class="p1-done-score">${score} / ${total}</p>
           <p class="p1-done-msg">${pct >= 80 ? 'Your ear is sharp — lovely tone discrimination!' : 'Great training. Keep drilling and the tones will start to pop out.'}</p>
-          <button class="btn btn-primary btn-lg" id="p1-next">Next: Speaking practice →</button>
-          <button class="btn-link p1-done-home" id="p1-again">Practice again</button>
+          ${otherDone
+            ? `<button class="btn btn-primary btn-lg" id="p1-speak">Next: Speaking practice →</button>`
+            : `<button class="btn btn-primary btn-lg" id="p1-other">Try ${otherLabel} →</button>`}
+          <button class="btn-link p1-done-home" id="p1-again">Practice this set again</button>
+          ${otherDone ? '' : `<button class="btn-link p1-done-home" id="p1-speak2">Next: Speaking practice →</button>`}
           <button class="btn-link p1-done-home" id="p1-back">Back to home</button>
         </div>
       </div>
     `
     inject()
     document.getElementById('p1-home').addEventListener('click', () => navigate('/'))
-    document.getElementById('p1-next').addEventListener('click', () => navigate('/practice-2'))
     document.getElementById('p1-back').addEventListener('click', () => navigate('/'))
-    document.getElementById('p1-again').addEventListener('click', () => { idx = 0; score = 0; build(); render() })
+    document.getElementById('p1-again').addEventListener('click', () => start(mode))
+    document.getElementById('p1-other')?.addEventListener('click', () => start(other))
+    document.getElementById('p1-speak')?.addEventListener('click', () => navigate('/practice-2'))
+    document.getElementById('p1-speak2')?.addEventListener('click', () => navigate('/practice-2'))
   }
 
   function inject() {
@@ -221,6 +280,21 @@ const scopedCSS = `
     border-radius: 24px; padding: 8px 18px; font-family: inherit; font-size: 0.9rem; cursor: pointer; transition: all 0.2s;
   }
   .p1-listen:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Mode chooser ── */
+  .p1-modes { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
+  .p1-mode {
+    display: flex; align-items: center; gap: 16px; padding: 18px 20px; text-align: left;
+    background: var(--card-bg); border: 1.5px solid var(--card-border); border-radius: var(--radius);
+    color: var(--text-primary); font-family: inherit; cursor: pointer;
+    transition: border-color 0.18s, background 0.18s, transform 0.1s; -webkit-tap-highlight-color: transparent;
+  }
+  .p1-mode:hover { border-color: var(--accent); background: var(--accent-glow); }
+  .p1-mode:active { transform: scale(0.99); }
+  .p1-mode-emoji { font-size: 1.8rem; flex-shrink: 0; }
+  .p1-mode-text { display: flex; flex-direction: column; gap: 3px; }
+  .p1-mode-title { font-size: 1.05rem; font-weight: 700; }
+  .p1-mode-sub { font-size: 0.82rem; color: var(--text-secondary); }
 
   .p1-options { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
   .p1-opt {
