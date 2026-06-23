@@ -195,7 +195,7 @@ const scopedCSS = `
   .p3-rule-eg { color: var(--accent) !important; font-size: 0.85rem !important; }
 
   .p3-ready-q { text-align: center; font-size: 1.05rem; font-weight: 600; color: var(--text-primary); margin: 6px 0 16px; }
-  .p3-start, .p3-rules + .p3-ready-q + .btn { width: 100%; }
+  #p3-start { width: 100%; }
 
   .p3-head { text-align: center; margin-bottom: 18px; }
   .p3-progress { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 10px; }
