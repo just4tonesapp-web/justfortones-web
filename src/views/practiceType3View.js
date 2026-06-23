@@ -1,8 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════
-// Practice Type III — Tone Change Rules / 变调  (pptx slide 27)
-//   Goal (目标): remember the sandhi rules. Now driven by 60 REAL recordings
-//   (20 each: 3+3, 一, 不). Per word: hear the real pronunciation, choose how
-//   the tone changes, then get feedback + replay.
+// Practice Type III — Tone Change Rules / 变调  (pptx slide 27/28)
+//   Page 1: the three rules on one page (Rule 1 / 2 / 3) + a "ready?" prompt.
+//   Page 2: the test — 12 items (each rule tested 4×). For 一 and 不, exactly
+//     two questions become a 2nd tone and two become a 4th tone.
+//   Driven by 60 real recordings; audio plays ONLY via the "Hear it" button,
+//   after the learner has answered.
 // ═══════════════════════════════════════════════════════════════════
 import { navigate } from '../router.js'
 import { applyTone, shuffle } from '../utils/pinyin.js'
@@ -10,9 +12,9 @@ import { playClip, stopAllAudio } from '../utils/audio.js'
 import { TONE_CHANGE } from '../utils/toneChangeWords.js'
 
 const RULES = [
-  { tag: '3 + 3', title: 'Two 3rd tones', text: 'When a 3rd tone is followed by another 3rd tone, the <b>first</b> becomes a <b>2nd</b> tone.', eg: '你好 nǐ + hǎo → <b>ní hǎo</b>' },
-  { tag: '一 yī', title: 'The number 一', text: '一 becomes a <b>2nd</b> tone before a 4th tone, and a <b>4th</b> tone before a 1st / 2nd / 3rd tone.', eg: '一个 → <b>yí</b> gè · 一天 → <b>yì</b> tiān' },
-  { tag: '不 bù', title: 'The negative 不', text: '不 becomes a <b>2nd</b> tone before a 4th tone; otherwise it stays a <b>4th</b> tone.', eg: '不是 → <b>bú</b> shì · 不好 → <b>bù</b> hǎo' },
+  { tag: 'Rule 1', title: 'Two 3rd tones', text: 'When a 3rd tone is followed by another 3rd tone, the <b>first</b> becomes a <b>2nd</b> tone.', eg: '你好 nǐ + hǎo → <b>ní hǎo</b>' },
+  { tag: 'Rule 2', title: 'The number 一 (yī)', text: '一 becomes a <b>2nd</b> tone before a 4th tone, and a <b>4th</b> tone before a 1st / 2nd / 3rd tone.', eg: '一个 → <b>yí</b> gè · 一天 → <b>yì</b> tiān' },
+  { tag: 'Rule 3', title: 'The negative 不 (bù)', text: '不 becomes a <b>2nd</b> tone before a 4th tone; otherwise it stays a <b>4th</b> tone.', eg: '不是 → <b>bú</b> shì · 不好 → <b>bù</b> hǎo' },
 ]
 
 function parse(f) {
@@ -45,51 +47,64 @@ function makeQ(type, item) {
     why: t1 === 2 ? `不 before a 4th tone → 2nd tone (${said}).` : `不 keeps its 4th tone before a ${ORD[t2]} tone (${said}).` }
 }
 
-// Type III is split into two short practices (pptx slide 28): A = the 3+3 sandhi
-// rule, B = the 一 / 不 special words. Each runs as its own page and ends on the
-// SAME completion screen; finishing A leads straight into B.
-const PARTS = [
-  { id: 'A', label: 'Test A · two 3rd tones', types: ['33'], rules: [0], count: 7 },
-  { id: 'B', label: 'Test B · 一 and 不', types: ['yi', 'bu'], rules: [1, 2], count: 7 },
-]
+// 一 / 不: pick exactly 2 that turn into a 2nd tone and 2 that turn into a 4th tone.
+function pickBalanced(type, out) {
+  const items = TONE_CHANGE[type]
+  const becomes2nd = items.filter(it => parse(it.f).t1 === 2)
+  const becomes4th = items.filter(it => parse(it.f).t1 === 4)
+  shuffle(becomes2nd).slice(0, 2).forEach(it => out.push(makeQ(type, it)))
+  shuffle(becomes4th).slice(0, 2).forEach(it => out.push(makeQ(type, it)))
+}
 
-function buildPart(part) {
-  // Two separate tests: A = questions 1–7 (3+3 sandhi), B = the rest (一 / 不).
+function buildSession() {
   const out = []
-  const per = Math.ceil(part.count / part.types.length)
-  part.types.forEach(type => {
-    shuffle(TONE_CHANGE[type]).slice(0, per).forEach(item => out.push(makeQ(type, item)))
-  })
-  return shuffle(out).slice(0, part.count)
+  shuffle(TONE_CHANGE['33']).slice(0, 4).forEach(item => out.push(makeQ('33', item))) // Rule 1 ×4
+  pickBalanced('yi', out) // Rule 2 ×4 (2 二声 + 2 四声)
+  pickBalanced('bu', out) // Rule 3 ×4 (2 二声 + 2 四声)
+  return shuffle(out) // 12 items
 }
 
 export function practiceType3View(container) {
-  let partIdx = 0, part = PARTS[0]
-  let qs = buildPart(part)
+  let stage = 'intro' // 'intro' (rules) → 'test'
+  let qs = buildSession()
   let idx = 0, score = 0, answered = false, selected = null
 
-  render()
+  renderIntro()
 
-  function render() {
-    if (idx >= qs.length) return renderDone()
-    const q = qs[idx]
-
+  // ── Page 1: the three rules + a "ready?" prompt ──
+  function renderIntro() {
     container.innerHTML = `
       <div class="app-shell shell-top-center practice-shell">
         <div class="back-row"><button class="app-logo" id="p3-home">Just4Tones</button></div>
-
-        ${idx === 0 ? `
         <div class="p3-rules card animate-in">
-          <div class="p3-rules-head">${part.label}</div>
-          ${part.rules.map(ri => RULES[ri]).map(r => `
+          <div class="p3-rules-head">Tone changes (变调)</div>
+          ${RULES.map(r => `
             <div class="p3-rule">
               <span class="p3-rule-tag">${r.tag}</span>
               <div class="p3-rule-body"><div class="p3-rule-title">${r.title}</div><p>${r.text}</p><p class="p3-rule-eg">${r.eg}</p></div>
             </div>`).join('')}
-        </div>` : ''}
+        </div>
+        <p class="p3-ready-q">Are you ready to test your tone change knowledge?</p>
+        <button class="btn btn-primary btn-lg" id="p3-start">Start the test →</button>
+      </div>
+    `
+    inject()
+    document.getElementById('p3-home').addEventListener('click', () => { stopAllAudio(); navigate('/') })
+    document.getElementById('p3-start').addEventListener('click', () => {
+      stage = 'test'; idx = 0; score = 0; answered = false; selected = null; render()
+    })
+  }
+
+  // ── Page 2: the 12-item test ──
+  function render() {
+    if (idx >= qs.length) return renderDone()
+    const q = qs[idx]
+    container.innerHTML = `
+      <div class="app-shell shell-top-center practice-shell">
+        <div class="back-row"><button class="app-logo" id="p3-home">Just4Tones</button></div>
 
         <div class="p3-head">
-          <div class="p3-progress">${part.label} · Question ${idx + 1} of ${qs.length}</div>
+          <div class="p3-progress">Question ${idx + 1} of ${qs.length}</div>
           <div class="p3-word">${q.chars}</div>
           <p class="p3-q">${q.q}</p>
         </div>
@@ -122,7 +137,7 @@ export function practiceType3View(container) {
       const fb = document.getElementById('p3-feedback')
       fb.className = `p3-feedback ${ok ? 'good' : 'bad'}`
       fb.innerHTML = `${ok ? '✓ Correct!' : '✗ Not quite.'} It's <strong>${q.said}</strong>. ${q.why}
-        <button class="p3-hear" id="p3-hear">🔊 Hear it again</button>`
+        <button class="p3-hear" id="p3-hear">🔊 Hear it</button>`
       document.getElementById('p3-hear').addEventListener('click', () => playClip(q.file))
       const next = document.getElementById('p3-next')
       next.classList.remove('hidden')
@@ -134,20 +149,16 @@ export function practiceType3View(container) {
 
   function renderDone() {
     const pct = Math.round((score / qs.length) * 100)
-    const last = partIdx >= PARTS.length - 1
-    // Identical completion screen for both A and B — only the primary button differs.
     container.innerHTML = `
       <div class="app-shell shell-top-center practice-shell">
         <div class="back-row"><button class="app-logo" id="p3-home">Just4Tones</button></div>
         <div class="p3-done card animate-in text-center">
           <div class="p3-done-emoji">${pct >= 80 ? '🎉' : '📚'}</div>
-          <div class="p3-done-part">${part.label}</div>
-          <h1>Tone-change practice complete</h1>
+          <h1>Tone-change test complete</h1>
           <p class="p3-done-score">${score} / ${qs.length}</p>
-          <p class="p3-done-msg">${pct >= 80 ? 'You\'ve got these rules down!' : 'Review the rules at the top and try again — they\'ll stick.'}</p>
-          ${last
-            ? `<button class="btn btn-primary btn-lg" id="p3-again">Practice again</button>`
-            : `<button class="btn btn-primary btn-lg" id="p3-continue">Continue to Test ${PARTS[partIdx + 1].id} →</button>`}
+          <p class="p3-done-msg">${pct >= 80 ? 'You\'ve got the tone-change rules down!' : 'Review the rules and try again — they\'ll stick.'}</p>
+          <button class="btn btn-primary btn-lg" id="p3-again">Take the test again</button>
+          <button class="btn-link p3-done-home" id="p3-rules">Review the rules</button>
           <button class="btn-link p3-done-home" id="p3-back">Back to home</button>
         </div>
       </div>
@@ -155,15 +166,8 @@ export function practiceType3View(container) {
     inject()
     document.getElementById('p3-home').addEventListener('click', () => navigate('/'))
     document.getElementById('p3-back').addEventListener('click', () => navigate('/'))
-    if (last) {
-      document.getElementById('p3-again').addEventListener('click', () => {
-        partIdx = 0; part = PARTS[0]; qs = buildPart(part); idx = 0; score = 0; answered = false; selected = null; render()
-      })
-    } else {
-      document.getElementById('p3-continue').addEventListener('click', () => {
-        partIdx++; part = PARTS[partIdx]; qs = buildPart(part); idx = 0; score = 0; answered = false; selected = null; render()
-      })
-    }
+    document.getElementById('p3-rules').addEventListener('click', () => { stage = 'intro'; qs = buildSession(); renderIntro() })
+    document.getElementById('p3-again').addEventListener('click', () => { qs = buildSession(); idx = 0; score = 0; answered = false; selected = null; render() })
   }
 
   function inject() {
@@ -176,29 +180,26 @@ export function practiceType3View(container) {
 }
 
 const scopedCSS = `
-  .p3-rules { padding: 18px 20px; margin-bottom: 20px; }
+  .p3-rules { padding: 18px 20px; margin-bottom: 18px; }
   .p3-rules-head { font-size: 1.05rem; font-weight: 700; margin-bottom: 14px; }
   .p3-rule { display: flex; gap: 12px; margin-bottom: 14px; }
   .p3-rule:last-child { margin-bottom: 0; }
   .p3-rule-tag {
     flex-shrink: 0; align-self: flex-start;
     background: var(--accent-glow); border: 1px solid rgba(56,189,248,0.3); color: var(--accent);
-    font-weight: 700; font-size: 0.8rem; padding: 4px 10px; border-radius: 10px; min-width: 44px; text-align: center;
+    font-weight: 700; font-size: 0.8rem; padding: 4px 10px; border-radius: 10px; min-width: 48px; text-align: center;
   }
   .p3-rule-title { font-weight: 600; margin-bottom: 2px; }
   .p3-rule-body p { font-size: 0.88rem; line-height: 1.5; color: var(--text-secondary); margin: 2px 0; }
   .p3-rule-body b { color: var(--text-primary); }
   .p3-rule-eg { color: var(--accent) !important; font-size: 0.85rem !important; }
 
+  .p3-ready-q { text-align: center; font-size: 1.05rem; font-weight: 600; color: var(--text-primary); margin: 6px 0 16px; }
+  .p3-start, .p3-rules + .p3-ready-q + .btn { width: 100%; }
+
   .p3-head { text-align: center; margin-bottom: 18px; }
   .p3-progress { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 10px; }
   .p3-word { font-size: 3.2rem; font-weight: 700; line-height: 1; margin-bottom: 6px; }
-  .p3-sub { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 12px; }
-  .p3-listen {
-    background: var(--surface); border: 1px solid var(--card-border); color: var(--text-primary);
-    border-radius: 24px; padding: 8px 18px; font-family: inherit; font-size: 0.9rem; cursor: pointer; transition: all 0.2s;
-  }
-  .p3-listen:hover { border-color: var(--accent); color: var(--accent); }
   .p3-q { font-size: 1rem; color: var(--text-secondary); margin-top: 16px; }
 
   .p3-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
@@ -224,7 +225,6 @@ const scopedCSS = `
 
   .p3-done { padding: 32px 24px; }
   .p3-done-emoji { font-size: 3rem; margin-bottom: 8px; }
-  .p3-done-part { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); font-weight: 600; margin-bottom: 6px; }
   .p3-done h1 { font-size: 1.4rem; margin-bottom: 10px; }
   .p3-done-score { font-size: 2.2rem; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
   .p3-done-msg { color: var(--text-secondary); line-height: 1.55; margin-bottom: 22px; }

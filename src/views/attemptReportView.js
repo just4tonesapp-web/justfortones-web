@@ -23,7 +23,7 @@ export function attemptReportView(container) {
   if (typeof det === 'string') { try { det = JSON.parse(det) } catch { det = null } }
   const answers = det?.answers || []
 
-  let body
+  let body, analysis = null
   if (!answers.length) {
     // Older attempts saved without per-question detail — show the score only.
     const pct = Math.round((a.score / a.total) * 100)
@@ -32,11 +32,16 @@ export function attemptReportView(container) {
         <div class="tr-summary-text"><div class="tr-test-label">${meta.label}</div><div class="tr-summary-sub">No per-tone breakdown saved for this attempt.</div></div>
       </div></div>`
   } else {
-    const analysis = a.test_type === 'B'
+    analysis = a.test_type === 'B'
       ? analyzeDisyllabic(answers.map(x => ({ tones: x.tones || [x.tone1, x.tone2], correct: !!x.correct })))
       : analyzeSingleSyllable(answers.map(x => ({ tone: x.tone, correct: a.test_type === 'C' ? !!x.passed : !!x.correct })))
     body = buildReportHTML({ analysis, score: a.score, total: a.total, testLabel: meta.label, shape: meta.shape, skill: meta.skill, showSummary: true }).html
   }
+
+  // Jump straight into the matching adaptive practice (recognition tests 1 & 2 →
+  // Practice I; speaking test 3 → Practice II), seeded with this report's weak tone.
+  const practiceRoute = a.test_type === 'C' ? '/practice-2' : '/practice-1'
+  const practiceLabel = a.test_type === 'C' ? 'Start speaking practice →' : 'Start recognition practice →'
 
   container.innerHTML = `
     <div class="app-shell shell-top-center">
@@ -44,12 +49,17 @@ export function attemptReportView(container) {
       <h1 class="ar-title">Test Report</h1>
       <div class="ar-date">${formatDate(a.created_at)}</div>
       ${body}
+      <button class="btn btn-primary btn-lg ar-cta" id="ar-practice">${practiceLabel}</button>
     </div>
   `
   const style = document.createElement('style')
   style.textContent = TONE_REPORT_CSS + arCSS
   container.appendChild(style)
   document.getElementById('ar-back').addEventListener('click', () => navigate('/history'))
+  document.getElementById('ar-practice').addEventListener('click', () => {
+    if (analysis?.recommendedTone) sessionStorage.setItem('j4t_focus_tone', String(analysis.recommendedTone))
+    navigate(practiceRoute)
+  })
 }
 
 function formatDate(iso) {
@@ -70,4 +80,5 @@ const arCSS = `
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
   .ar-date { text-align: center; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 20px; }
+  .ar-cta { width: 100%; margin-top: 18px; }
 `
