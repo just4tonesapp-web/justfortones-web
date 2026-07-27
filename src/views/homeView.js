@@ -27,33 +27,23 @@ export function homeView(container) {
         Test My Tone Skills Now
       </button>
 
-      <!-- Practice entry points -->
+      <!-- Practice entry points: three small square tiles -->
       <div class="s2-practice">
-        <div class="s2-practice-head">Or jump straight into practice</div>
-        <button class="s2-prac-btn" data-nav="/practice-1">
-          <span class="s2-prac-icon">👂</span>
-          <span class="s2-prac-text">
-            <span class="s2-prac-title">Tone Recognition</span>
-            <span class="s2-prac-sub">Pick the tone you hear</span>
-          </span>
-          <span class="s2-prac-arrow">›</span>
-        </button>
-        <button class="s2-prac-btn" data-nav="/practice-2">
-          <span class="s2-prac-icon">🎤</span>
-          <span class="s2-prac-text">
-            <span class="s2-prac-title">Listen &amp; Speak</span>
-            <span class="s2-prac-sub">Record yourself and compare</span>
-          </span>
-          <span class="s2-prac-arrow">›</span>
-        </button>
-        <button class="s2-prac-btn" data-nav="/practice-3">
-          <span class="s2-prac-icon">🔄</span>
-          <span class="s2-prac-text">
+        <div class="s2-practice-head">Practice</div>
+        <div class="s2-prac-grid">
+          <button class="s2-prac-btn" data-nav="/practice-1">
+            <span class="s2-prac-icon">👂</span>
+            <span class="s2-prac-title">Recognition</span>
+          </button>
+          <button class="s2-prac-btn" data-nav="/practice-2">
+            <span class="s2-prac-icon">🎤</span>
+            <span class="s2-prac-title">Speaking</span>
+          </button>
+          <button class="s2-prac-btn" data-nav="/practice-3">
+            <span class="s2-prac-icon">🔄</span>
             <span class="s2-prac-title">Tone Changes</span>
-            <span class="s2-prac-sub">When 一, 不 and 3rd tones switch</span>
-          </span>
-          <span class="s2-prac-arrow">›</span>
-        </button>
+          </button>
+        </div>
       </div>
     </div>
   `
@@ -121,49 +111,48 @@ const scopedCSS = `
     box-shadow: 0 12px 34px rgba(56, 189, 248, 0.4);
   }
 
-  /* ── Practice entry points (compact rows) ── */
-  .s2-practice {
-    margin-top: 28px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
+  /* ── Practice entry points: three small square tiles ── */
+  .s2-practice { margin-top: 28px; }
   .s2-practice-head {
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.12em;
     color: var(--text-muted);
-    margin-bottom: 2px;
+    margin-bottom: 8px;
+  }
+  .s2-prac-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
   }
   .s2-prac-btn {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 8px 12px;
+    justify-content: center;
+    gap: 5px;
+    padding: 10px 4px;
     background: var(--card-bg);
     border: 1px solid var(--card-border);
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-family: inherit;
-    color: var(--text-primary);
-    text-align: left;
+    color: var(--text-secondary);
     transition: all 0.2s ease;
     -webkit-tap-highlight-color: transparent;
   }
   .s2-prac-btn:hover {
     border-color: var(--accent);
     background: var(--accent-glow);
+    color: var(--text-primary);
   }
-  .s2-prac-icon { font-size: 1rem; flex-shrink: 0; }
-  .s2-prac-text { flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-  .s2-prac-title { font-size: 0.85rem; font-weight: 600; white-space: nowrap; }
-  .s2-prac-sub {
-    font-size: 0.72rem; color: var(--text-muted);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  .s2-prac-icon { font-size: 1.15rem; line-height: 1; }
+  .s2-prac-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
   }
-  .s2-prac-arrow { font-size: 1.05rem; color: var(--text-muted); flex-shrink: 0; }
-  .s2-prac-btn:hover .s2-prac-arrow { color: var(--accent); }
 
   @media (max-width: 480px) {
     .home2 { padding-top: 32px; }
