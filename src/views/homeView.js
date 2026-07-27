@@ -121,26 +121,26 @@ const scopedCSS = `
     box-shadow: 0 12px 34px rgba(56, 189, 248, 0.4);
   }
 
-  /* ── Practice entry points ── */
+  /* ── Practice entry points (compact rows) ── */
   .s2-practice {
-    margin-top: 36px;
+    margin-top: 28px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 6px;
   }
   .s2-practice-head {
-    font-size: 0.78rem;
+    font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.12em;
     color: var(--text-muted);
-    margin-bottom: 4px;
+    margin-bottom: 2px;
   }
   .s2-prac-btn {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 10px;
     width: 100%;
-    padding: 14px 16px;
+    padding: 8px 12px;
     background: var(--card-bg);
     border: 1px solid var(--card-border);
     border-radius: var(--radius-sm);
@@ -154,13 +154,15 @@ const scopedCSS = `
   .s2-prac-btn:hover {
     border-color: var(--accent);
     background: var(--accent-glow);
-    transform: translateY(-1px);
   }
-  .s2-prac-icon { font-size: 1.3rem; flex-shrink: 0; }
-  .s2-prac-text { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-  .s2-prac-title { font-size: 0.95rem; font-weight: 600; }
-  .s2-prac-sub { font-size: 0.78rem; color: var(--text-secondary); }
-  .s2-prac-arrow { font-size: 1.3rem; color: var(--text-muted); flex-shrink: 0; }
+  .s2-prac-icon { font-size: 1rem; flex-shrink: 0; }
+  .s2-prac-text { flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .s2-prac-title { font-size: 0.85rem; font-weight: 600; white-space: nowrap; }
+  .s2-prac-sub {
+    font-size: 0.72rem; color: var(--text-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .s2-prac-arrow { font-size: 1.05rem; color: var(--text-muted); flex-shrink: 0; }
   .s2-prac-btn:hover .s2-prac-arrow { color: var(--accent); }
 
   @media (max-width: 480px) {
