@@ -298,7 +298,7 @@ export function testBView(container) {
         </button>
 
         <p class="result-retake">
-          Do you want to take that test again? Fluctuation in performance in listening foreign sounds is totally expected.
+          Want another go? Scores go up and down when your ear is still tuning in — that's totally normal.
           <button class="result-retake-link" id="tb-retry">Test Again</button>
         </p>
       </div>

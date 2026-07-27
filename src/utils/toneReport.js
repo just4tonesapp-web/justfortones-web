@@ -150,11 +150,11 @@ export function buildReportHTML({ analysis, score, total, testLabel, shape, show
     }
     if (analysis.nascentTones.length) {
       const names = analysis.nascentTones.map(t => TONE_SHORT[t]).join(', ')
-      feedback += `<p class="tr-line tr-nascent">🌱 You demonstrate nascent ability in ${skill} ${shape === 'disyl' ? subject + ' ' : 'the '}${names} tone${analysis.nascentTones.length > 1 ? 's' : ''}.</p>`
+      feedback += `<p class="tr-line tr-nascent">🌱 You're getting the hang of ${skill} ${shape === 'disyl' ? subject + ' ' : 'the '}${names} tone${analysis.nascentTones.length > 1 ? 's' : ''} — keep going!</p>`
     }
     if (analysis.workTones.length) {
       const names = analysis.workTones.map(t => TONE_SHORT[t]).join(', ')
-      feedback += `<p class="tr-line tr-work">💪 Some work is needed on your ${shape === 'disyl' ? subject + ' ' : ''}${names} tone${analysis.workTones.length > 1 ? 's' : ''}.</p>`
+      feedback += `<p class="tr-line tr-work">💪 Your ${shape === 'disyl' ? subject + ' ' : ''}${names} tone${analysis.workTones.length > 1 ? 's' : ''} need${shape === 'disyl' || analysis.workTones.length > 1 ? '' : 's'} more practice.</p>`
     }
   }
 
@@ -165,7 +165,7 @@ export function buildReportHTML({ analysis, score, total, testLabel, shape, show
     recommendation = `
       <div class="tr-reco">
         <div class="tr-reco-head">🎯 Our recommendation</div>
-        <p>Focus on the <strong style="color:var(--accent)">${TONE_NAMES[rt]}</strong> first${shape === 'disyl' ? ' in 2-syllable words' : ''}, because of its natural distribution in Chinese. You will see huge gains immediately.</p>
+        <p>Start with the <strong style="color:var(--accent)">${TONE_NAMES[rt]}</strong>${shape === 'disyl' ? ' in 2-syllable words' : ''} — it shows up everywhere in Chinese, so improving it pays off right away.</p>
         <p class="tr-feature">${TONE_FEATURE[rt]}</p>
       </div>`
   }

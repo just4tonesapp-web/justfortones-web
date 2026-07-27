@@ -1,12 +1,50 @@
 // ═══════════════════════════════════════
 // Progress Service — persist and retrieve test results
 //
-// Authenticated users: Supabase `test_results` table
-// Guest users: localStorage fallback
+// Logged-in users (username/password in OUR database — app_users, not
+// Supabase Auth): Supabase `app_results` via the security-definer RPCs
+// app_save_result / app_get_results (see scripts/sql/app_results.sql).
+// Guests: localStorage only.
+//
+// localStorage is always written first as a backup; rows that reached the
+// cloud carry `synced: true`. getResults() re-uploads any unsynced rows
+// (taken as guest, or while the server was unreachable) before reading, so
+// history survives new devices and cleared browsers once the user logs in.
 // ═══════════════════════════════════════
 import { supabase } from '../supabaseClient.js'
 
 const LS_KEY = 'j4t_progress'
+
+function currentUser() {
+  try { return JSON.parse(localStorage.getItem('j4t_user') || 'null') } catch { return null }
+}
+
+function readLocal() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]') } catch { return [] }
+}
+
+function writeLocal(list) {
+  localStorage.setItem(LS_KEY, JSON.stringify(list))
+}
+
+// created_at comes back from Postgres in a different string format than the
+// ISO string we stored locally — compare as epoch millis.
+function rowKey(r) {
+  return `${r.test_type}|${new Date(r.created_at).getTime()}`
+}
+
+async function uploadResult(userId, r) {
+  const { data, error } = await supabase.rpc('app_save_result', {
+    p_user_id: userId,
+    p_test_type: r.test_type,
+    p_score: r.score,
+    p_total: r.total,
+    p_passed: r.passed,
+    p_details: r.details ?? {},
+    p_created_at: r.created_at,
+  })
+  if (error || data?.error) throw new Error(error?.message || data.error)
+}
 
 /** Save a test result */
 export async function saveResult(testType, score, total, details = {}) {
@@ -19,46 +57,56 @@ export async function saveResult(testType, score, total, details = {}) {
     created_at: new Date().toISOString(),
   }
 
-  // Always save to localStorage as backup
-  const local = JSON.parse(localStorage.getItem(LS_KEY) || '[]')
+  // Always save to localStorage first
+  const local = readLocal()
   local.push(result)
-  localStorage.setItem(LS_KEY, JSON.stringify(local))
+  writeLocal(local)
 
-  // Try Supabase if authenticated
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session?.user) {
-      await supabase.from('test_results').insert({
-        user_id: session.user.id,
-        ...result,
-        details: JSON.stringify(details),
-      })
+  const user = currentUser()
+  if (user?.id) {
+    try {
+      await uploadResult(user.id, result)
+      // Mark the stored copy as synced (re-read: another save may have landed)
+      const fresh = readLocal()
+      const mine = fresh.find(r => rowKey(r) === rowKey(result))
+      if (mine) { mine.synced = true; writeLocal(fresh) }
+    } catch (e) {
+      console.warn('[Progress] cloud save failed (kept locally, will retry):', e?.message)
     }
-  } catch (e) {
-    console.warn('[Progress] Supabase save failed:', e.message)
   }
 
   return result
 }
 
-/** Get all results for the current user */
+/** Get all results for the current user, most recent first */
 export async function getResults() {
-  // Try Supabase first
+  const user = currentUser()
+  const local = readLocal()
+  if (!user?.id) return local.slice().reverse()
+
   try {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session?.user) {
-      const { data } = await supabase
-        .from('test_results')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false })
-      if (data?.length) return data
+    // Push up local rows the cloud doesn't have yet (guest runs, offline runs).
+    const pending = local.filter(r => !r.synced)
+    let uploaded = false
+    for (const r of pending) {
+      try { await uploadResult(user.id, r); r.synced = true; uploaded = true }
+      catch { break } // server unreachable — stop, keep rows for next time
+    }
+    if (uploaded) writeLocal(local)
+
+    const { data, error } = await supabase.rpc('app_get_results', { p_user_id: user.id })
+    if (error) throw error
+    if (Array.isArray(data)) {
+      // Cloud is authoritative; append local rows it doesn't have (sync failed)
+      const seen = new Set(data.map(rowKey))
+      const extras = local.filter(r => !seen.has(rowKey(r)))
+      return [...data, ...extras]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     }
   } catch (e) {
-    // fall through to localStorage
+    console.warn('[Progress] cloud fetch failed, using local history:', e?.message)
   }
-
-  return JSON.parse(localStorage.getItem(LS_KEY) || '[]').reverse()
+  return local.slice().reverse()
 }
 
 /** Get the latest result for a specific test */

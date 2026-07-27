@@ -758,7 +758,7 @@ export function testCView(container, { debug = false } = {}) {
         </button>
 
         <p class="result-retake">
-          Do you want to take that test again? Fluctuation in performance in speaking foreign sounds is totally expected.
+          Want another go? Scores go up and down when you're learning new sounds — that's totally normal.
           <button class="result-retake-link" id="tc-retry">Test Again</button>
         </p>
       </div>

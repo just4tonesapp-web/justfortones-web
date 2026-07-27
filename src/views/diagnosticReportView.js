@@ -124,13 +124,13 @@ export async function diagnosticReportView(container) {
   const descLines = []
   if (isComplete) {
     if (strong.length) descLines.push(`You are really good at recognizing and speaking the <strong>${tonesPhrase(strong)}</strong>. Bravo!`)
-    if (mid.length)    descLines.push(`You demonstrate a nascent ability with the <strong>${tonesPhrase(mid)}</strong>.`)
-    if (weak.length)   descLines.push(`Some work is still needed on your <strong>${tonesPhrase(weak)}</strong>.`)
+    if (mid.length)    descLines.push(`You're getting the hang of the <strong>${tonesPhrase(mid)}</strong> — keep going!`)
+    if (weak.length)   descLines.push(`Your <strong>${tonesPhrase(weak)}</strong> still need${weak.length > 1 ? '' : 's'} more practice.`)
   }
 
   let recoEn = ''
   if (focusTone) {
-    recoEn = `Our recommendation is to focus on the <strong style="color:${TONE_COLOR[focusTone]}">${ORD[focusTone]} tone</strong> first, because of this tone’s distribution in Chinese. You’ll see huge gains immediately.`
+    recoEn = `Start with the <strong style="color:${TONE_COLOR[focusTone]}">${ORD[focusTone]} tone</strong> — it shows up everywhere in Chinese, so improving it pays off right away.`
   }
 
   // ── Per-test sub-reports (slide 21 "Open Report of X") ──
@@ -196,7 +196,7 @@ export async function diagnosticReportView(container) {
       <div class="cr-cta animate-in" style="animation-delay:.2s">
         <p class="cr-cta-line">
           ${isComplete
-            ? 'Ready for some exercises? These adaptive exercises will help you improve on perception and pronunciation of tones!'
+            ? 'Ready for some exercises? They adapt to your results and train both your ear and your pronunciation!'
             : 'Take the remaining tests to unlock your full composite analysis.'}
         </p>
         <button class="btn btn-primary btn-lg" id="cr-next">

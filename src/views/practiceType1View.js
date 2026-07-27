@@ -240,7 +240,7 @@ export function practiceType1View(container) {
           <div class="p1-done-emoji">${pct >= 80 ? '🎉' : pct >= 50 ? '👂' : '💪'}</div>
           <h1>Practice complete</h1>
           <p class="p1-done-score">${score} / ${total}</p>
-          <p class="p1-done-msg">${pct >= 80 ? 'Your ear is sharp — lovely tone discrimination!' : 'Great training. Keep drilling and the tones will start to pop out.'}</p>
+          <p class="p1-done-msg">${pct >= 80 ? 'Your ear is sharp — you can really tell the tones apart!' : 'Great training. Keep drilling and the tones will start to pop out.'}</p>
           ${otherDone
             ? `<button class="btn btn-primary btn-lg" id="p1-speak">Next: Speaking practice →</button>`
             : `<button class="btn btn-primary btn-lg" id="p1-other">Try ${otherLabel} →</button>`}

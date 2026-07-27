@@ -143,6 +143,9 @@ export function authView(container) {
     if (msg.includes('Could not find the function') || msg.includes('schema cache'))
       return 'Login isn\'t set up yet — run the account SQL in Supabase first.'
     if (msg.includes('not configured')) return 'Login service is unavailable. Try guest mode.'
+    // fetch failures / Cloudflare 5xx = server unreachable (e.g. paused project)
+    if (/failed to fetch|load failed|networkerror|52[0-9]|unexpected token/i.test(msg))
+      return 'Can\'t reach the server right now. Please try again in a minute, or continue as Guest.'
     return msg // surface the real DB error (helps during setup)
   }
 
