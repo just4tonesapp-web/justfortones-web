@@ -9,9 +9,10 @@
 // ═══════════════════════════════════════════════════════════════════
 import { navigate } from '../router.js'
 import { applyTone, shuffle } from '../utils/pinyin.js'
-import { playSyllable, playDisyllable, stopAllAudio } from '../utils/audio.js'
+import { playSyllable, playDisyllable, playPcm, stopAllAudio } from '../utils/audio.js'
 import { AudioEngine } from '../utils/audioEngine.js'
 import { detectToneWithPitch, normalizePeak } from '../utils/models/pitchModel.js'
+import { splitDisyllableAudio } from '../utils/audioSplit.js'
 import { DISYLLABLE_BY_PAIR } from '../utils/disyllableManifest.js'
 
 const SINGLES = [
@@ -39,7 +40,6 @@ export function practiceType2View(container) {
   const FOCUS_BADGE = adaptive ? `<div class="prac-focus">🎯 Targeting your <strong>${ORD[FOCUS]} tone</strong></div>` : ''
   let items = buildItems()
   let idx = 0, phase = 'ready', lastRec = null, feedback = null, isRecording = false, recTimer = null
-  let actx = null
 
   function buildItems() {
     const list = []
@@ -65,19 +65,13 @@ export function practiceType2View(container) {
     else playDisyllable(item.syl1, item.t1, item.syl2, item.t2)
   }
 
-  async function playOwn() {
+  function playOwn() {
     if (!lastRec || !lastRec.samples || !lastRec.samples.length) return
-    stopAllAudio()
-    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)()
-    // iOS / in-app browsers (WeChat) keep contexts suspended until resumed
-    // inside a user gesture — without this the button silently does nothing.
-    if (actx.state === 'suspended') { try { await actx.resume() } catch { /* ignore */ } }
+    // WAV + <audio> element = the exact same playback path as the demo clips.
+    // (A WebAudio context can silently sit 'suspended'/'interrupted' on iOS
+    // after mic capture — that's why this button used to work only sometimes.)
     // Boost quiet takes so learners can actually hear themselves.
-    const samples = normalizePeak(lastRec.samples, 0.9, 0.005)
-    const buf = actx.createBuffer(1, samples.length, lastRec.sampleRate)
-    buf.getChannelData(0).set(samples)
-    const src = actx.createBufferSource()
-    src.buffer = buf; src.connect(actx.destination); src.start()
+    playPcm(normalizePeak(lastRec.samples, 0.9, 0.005), lastRec.sampleRate)
   }
 
   async function startRec(item) {
@@ -102,8 +96,30 @@ export function practiceType2View(container) {
         feedback = { good: ok, text: ok ? pick(PRAISE) : pick(NUDGE) }
       }
     } else {
-      // Disyllable: skip on-device tone judging; lean on self-comparison.
-      feedback = { good: true, text: 'Nice — now replay yours and the demo to compare.' }
+      // Disyllable: split the take at the energy valley and judge each
+      // syllable with the free on-device pitch model.
+      const { first, second } = splitDisyllableAudio(lastRec.samples, lastRec.sampleRate)
+      const d1 = detectToneWithPitch(first, lastRec.sampleRate)
+      const d2 = detectToneWithPitch(second, lastRec.sampleRate)
+      if (d1 === null && d2 === null) {
+        feedback = { good: false, text: 'We couldn\'t hear that clearly — try again a little closer to the mic.' }
+      } else {
+        // Half-third rule: a 3rd tone on the FIRST syllable is normally spoken
+        // as a low falling tone in real words, which the contour matcher hears
+        // as a fall — don't mark that wrong.
+        const ok1 = d1 === item.t1 || (item.t1 === 3 && d1 === 4)
+        const ok2 = d2 === item.t2
+        const p1 = applyTone(item.syl1, item.t1)
+        const p2 = applyTone(item.syl2, item.t2)
+        if (ok1 && ok2) {
+          feedback = { good: true, text: `${pick(PRAISE)} Both syllables sounded right — replay yours and the demo to double-check.` }
+        } else if (ok1 || ok2) {
+          const off = ok1 ? p2 : p1
+          feedback = { good: false, text: `Close! “${off}” sounded off — listen to the demo again and watch that syllable.` }
+        } else {
+          feedback = { good: false, text: `Not quite — listen to the demo and try to match “${p1} ${p2}” one syllable at a time.` }
+        }
+      }
     }
     phase = 'done'; render()
   }
