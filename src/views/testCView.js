@@ -114,8 +114,6 @@ export function testCView(container, { debug = false } = {}) {
   let isRecording = false
   let recordTimer = null
   let levelInterval = null
-  let silenceTimer = null
-  let hasSpeaking = false
 
   // Start loading models in the background immediately
   toneDetector.init((model, status, pct) => {
@@ -331,8 +329,12 @@ export function testCView(container, { debug = false } = {}) {
   $('tc-confirm-yes').addEventListener('click', () => logAccuracy(true))
   $('tc-confirm-no').addEventListener('click', () => logAccuracy(false))
 
+  // Tap once to record, tap again to stop (same interaction as the practice —
+  // the old auto-stop-on-silence made people wait and cut off soft speakers).
   $('tc-record').addEventListener('click', () => {
-    if (!isRecording && !$('tc-record').disabled) startRecording()
+    if ($('tc-record').disabled) return
+    if (isRecording) stopRecording()
+    else startRecording()
   })
 
   function startTest() {
@@ -390,41 +392,26 @@ export function testCView(container, { debug = false } = {}) {
     }
 
     isRecording = true
-    hasSpeaking = false
-    silenceTimer = null
 
-    $('tc-rec-label').textContent = 'Listening…'
-    $('tc-rec-icon').textContent = '🎤'
-    $('tc-rec-status').textContent = 'Speak now!'
+    $('tc-rec-label').textContent = 'Tap to Stop'
+    $('tc-rec-icon').textContent = '⏺'
+    $('tc-rec-status').textContent = 'Say the word, then tap to stop'
     $('tc-record').classList.add('recording')
 
-    // Level meter + silence detection
+    // Level meter (visual feedback only — the user decides when to stop)
     levelInterval = setInterval(() => {
       const rms = engine.getRMS()
       const pct = Math.min(100, rms * 500)
       $('tc-level-bar').style.width = `${pct}%`
-
-      const speaking = rms > 0.015
-      if (speaking) {
-        hasSpeaking = true
-        if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null }
-        $('tc-rec-status').textContent = 'Speaking…'
-      } else if (hasSpeaking && !silenceTimer) {
-        // Speech detected, now silence — stop after 400ms
-        silenceTimer = setTimeout(() => { if (isRecording) stopRecording() }, 400)
-        $('tc-rec-status').textContent = 'Done? Stopping…'
-      }
     }, 50)
 
-    // Safety max 6 seconds
-    recordTimer = setTimeout(() => { if (isRecording) stopRecording() }, 6000)
+    // Safety cap only — recording is user-controlled
+    recordTimer = setTimeout(() => { if (isRecording) stopRecording() }, 12000)
   }
 
   async function stopRecording() {
     clearTimeout(recordTimer)
-    clearTimeout(silenceTimer)
     clearInterval(levelInterval)
-    silenceTimer = null
     const recording = engine.stop()
     isRecording = false
 
@@ -774,7 +761,6 @@ export function testCView(container, { debug = false } = {}) {
   return () => {
     if (isRecording) engine.stop()
     clearTimeout(recordTimer)
-    clearTimeout(silenceTimer)
     clearInterval(levelInterval)
   }
 }

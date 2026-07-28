@@ -9,6 +9,25 @@
 // ═══════════════════════════════════════
 import { ACF2PLUS, YIN } from 'pitchfinder'
 
+/**
+ * Peak-normalize samples so quiet recordings aren't killed by the absolute
+ * RMS gates below (a soft voice used to lose most frames → null detection and
+ * an empty canvas contour). Silence stays silent: below `floor` we don't
+ * amplify (that would just boost the noise floor into fake pitches).
+ */
+export function normalizePeak(samples, target = 0.9, floor = 0.01) {
+  if (!samples.length) return samples
+  // 99.5th-percentile "peak" — a single click/pop shouldn't steal the gain
+  // from an otherwise quiet take.
+  const mags = Float32Array.from(samples, Math.abs).sort()
+  const peak = mags[Math.min(mags.length - 1, Math.floor(mags.length * 0.995))]
+  if (peak < floor || peak >= target) return samples
+  const gain = target / peak
+  const out = new Float32Array(samples.length)
+  for (let i = 0; i < samples.length; i++) out[i] = Math.max(-1, Math.min(1, samples[i] * gain))
+  return out
+}
+
 // 10-point Chao tone contours (1–5 pitch level scale)
 const TONE_CONTOURS = {
   1: [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0], // flat high (55)
@@ -24,6 +43,7 @@ const TONE_CONTOURS = {
  * @returns {number|null} detected tone (1-4) or null if insufficient signal
  */
 export function detectToneWithPitch(samples, sampleRate) {
+  samples = normalizePeak(samples)
   const acf = ACF2PLUS({ sampleRate })
   const yin = YIN({ sampleRate })
 
@@ -89,6 +109,7 @@ export function detectToneWithPitch(samples, sampleRate) {
  * Also returns the normalized contour for canvas drawing.
  */
 export function getPitchContour(samples, sampleRate) {
+  samples = normalizePeak(samples)
   const acf = ACF2PLUS({ sampleRate })
   const yin = YIN({ sampleRate })
 

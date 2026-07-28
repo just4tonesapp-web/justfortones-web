@@ -11,7 +11,7 @@ import { navigate } from '../router.js'
 import { applyTone, shuffle } from '../utils/pinyin.js'
 import { playSyllable, playDisyllable, stopAllAudio } from '../utils/audio.js'
 import { AudioEngine } from '../utils/audioEngine.js'
-import { detectToneWithPitch } from '../utils/models/pitchModel.js'
+import { detectToneWithPitch, normalizePeak } from '../utils/models/pitchModel.js'
 import { DISYLLABLE_BY_PAIR } from '../utils/disyllableManifest.js'
 
 const SINGLES = [
@@ -65,12 +65,17 @@ export function practiceType2View(container) {
     else playDisyllable(item.syl1, item.t1, item.syl2, item.t2)
   }
 
-  function playOwn() {
-    if (!lastRec) return
+  async function playOwn() {
+    if (!lastRec || !lastRec.samples || !lastRec.samples.length) return
     stopAllAudio()
     if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)()
-    const buf = actx.createBuffer(1, lastRec.samples.length, lastRec.sampleRate)
-    buf.getChannelData(0).set(lastRec.samples)
+    // iOS / in-app browsers (WeChat) keep contexts suspended until resumed
+    // inside a user gesture — without this the button silently does nothing.
+    if (actx.state === 'suspended') { try { await actx.resume() } catch { /* ignore */ } }
+    // Boost quiet takes so learners can actually hear themselves.
+    const samples = normalizePeak(lastRec.samples, 0.9, 0.005)
+    const buf = actx.createBuffer(1, samples.length, lastRec.sampleRate)
+    buf.getChannelData(0).set(samples)
     const src = actx.createBufferSource()
     src.buffer = buf; src.connect(actx.destination); src.start()
   }
@@ -90,8 +95,12 @@ export function practiceType2View(container) {
 
     if (item.type === 'single') {
       const tone = detectToneWithPitch(lastRec.samples, lastRec.sampleRate)
-      const ok = tone === item.tone
-      feedback = { good: ok, text: ok ? pick(PRAISE) : pick(NUDGE) }
+      if (tone === null) {
+        feedback = { good: false, text: 'We couldn\'t hear that clearly — try again a little closer to the mic.' }
+      } else {
+        const ok = tone === item.tone
+        feedback = { good: ok, text: ok ? pick(PRAISE) : pick(NUDGE) }
+      }
     } else {
       // Disyllable: skip on-device tone judging; lean on self-comparison.
       feedback = { good: true, text: 'Nice — now replay yours and the demo to compare.' }

@@ -9,7 +9,7 @@
 //   Tier 1 (moderate):  Deepgram 1.00, SenseVoice 1.00
 //   Tier 2 (penalized): Groq 0.50, GroqTurbo 0.50, Whisper 0.30, Classifier 0.10
 // ═══════════════════════════════════════
-import { detectToneWithPitch, getPitchContour } from './models/pitchModel.js'
+import { detectToneWithPitch, getPitchContour, normalizePeak } from './models/pitchModel.js'
 import { loadWhisper, detectToneWithWhisper } from './models/whisperModel.js'
 import { loadToneNet, detectToneWithToneNet } from './models/tonetModel.js'
 import { loadSenseVoice, detectToneWithSenseVoice } from './models/sensevoiceModel.js'
@@ -106,7 +106,10 @@ export class ToneDetector {
    * }>}
    */
   async detect({ samples, sampleRate }, targetBase = null, { webSpeechText = null, referenceChar = null } = {}) {
-    // Trim leading/trailing silence so models see only the voiced syllable
+    // Boost quiet recordings to full scale first (soft voices used to fall
+    // under the RMS gates → no pitch contour and misjudged tones), then trim
+    // leading/trailing silence so models see only the voiced syllable.
+    samples = normalizePeak(samples)
     samples = trimSilence(samples, sampleRate)
     const jobs = []
 
@@ -194,7 +197,7 @@ export class ToneDetector {
     // (e.g. a cloud model whose fetch never resolves) can't freeze detection
     // forever — the always-on pitch model still returns a vote. Each job already
     // resolves to null on error; timing out also resolves to null.
-    const JOB_TIMEOUT_MS = 9000
+    const JOB_TIMEOUT_MS = 5000
     const bounded = jobs.map(j =>
       Promise.race([j, new Promise(res => setTimeout(() => res(null), JOB_TIMEOUT_MS))])
     )
