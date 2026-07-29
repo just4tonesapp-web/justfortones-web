@@ -168,7 +168,7 @@ export async function detectToneWithGroqTurbo(samples, sampleRate, targetBase = 
 }
 
 // ── Resample to 16kHz (linear interpolation) ──
-function resampleTo16k(samples, fromRate) {
+export function resampleTo16k(samples, fromRate) {
   const ratio = fromRate / 16000
   const out = new Float32Array(Math.floor(samples.length / ratio))
   for (let i = 0; i < out.length; i++) {
@@ -180,7 +180,7 @@ function resampleTo16k(samples, fromRate) {
 }
 
 // ── Encode Float32Array as 16-bit PCM WAV blob ──
-function encodeWAV(samples, sampleRate) {
+export function encodeWAV(samples, sampleRate) {
   const numChannels = 1
   const bitsPerSample = 16
   const byteRate = sampleRate * numChannels * (bitsPerSample / 8)

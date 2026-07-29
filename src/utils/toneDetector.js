@@ -19,6 +19,7 @@ import { loadGroq, detectToneWithGroq, detectToneWithGroqTurbo } from './models/
 import { loadDeepgram, detectToneWithDeepgram } from './models/deepgramModel.js'
 import { loadGoogleSpeech, detectToneWithGoogle } from './models/googleSpeechModel.js'
 import { loadAzure, detectToneWithAzure } from './models/azureModel.js'
+import { loadOpenRouter, detectToneWithOpenRouter } from './models/openrouterModel.js'
 
 // Weights calibrated from accuracy log analysis (2026-03-30, 36 samples):
 // Pure ASR models often suffer from "Real Word Bias" on single syllables (they transcribe what you
@@ -36,6 +37,7 @@ const MODEL_WEIGHTS = {
   whisper:    0.30,   // In-browser ASR (weak context)
   classifier: 0.10,   // DistilHuBERT (needs retraining)
   pitch:      2.50,   // Pure acoustic contour matching — best at catching mispronunciations (94%)
+  openrouter: 1.50,   // Audio LLM (Gemini Flash by default) — asked for the tone directly; uncalibrated
 }
 
 export class ToneDetector {
@@ -78,6 +80,7 @@ export class ToneDetector {
       load('groqTurbo', loadGroq),  // reuses same API key
       load('google', loadGoogleSpeech),
       load('deepgram', loadDeepgram),
+      load('openrouter', loadOpenRouter),
       load('classifier', loadToneClassifier),
       load('whisper', () => loadWhisper((status, pct) => onStatus?.('whisper', status, pct))),
       // load('tonenet', loadToneNet),
@@ -153,6 +156,15 @@ export class ToneDetector {
       jobs.push(
         detectToneWithGoogle(samples, sampleRate, targetBase)
           .then(tone => tone !== null ? { model: 'google', tone, weight: MODEL_WEIGHTS.google } : null)
+          .catch(() => null)
+      )
+    }
+
+    // ── OpenRouter audio LLM ──
+    if (this.loaded.openrouter) {
+      jobs.push(
+        detectToneWithOpenRouter(samples, sampleRate, targetBase)
+          .then(tone => tone !== null ? { model: 'openrouter', tone, weight: MODEL_WEIGHTS.openrouter } : null)
           .catch(() => null)
       )
     }

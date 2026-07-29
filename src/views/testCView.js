@@ -31,6 +31,7 @@ const JUDGE_PERSONAS = {
   groqTurbo:  { emoji: '⚡', name: 'Turbo' },
   google:     { emoji: '🔍', name: 'Google' },
   deepgram:   { emoji: '🔊', name: 'Deep' },
+  openrouter: { emoji: '🧭', name: 'Router' },
 }
 
 const TONE_ARROWS = { 1: '─', 2: '／', 3: '∨', 4: '＼' }
@@ -128,6 +129,7 @@ export function testCView(container, { debug = false } = {}) {
       { name: 'groqTurbo',  ...JUDGE_PERSONAS.groqTurbo },
       { name: 'google',     ...JUDGE_PERSONAS.google },
       { name: 'deepgram',  ...JUDGE_PERSONAS.deepgram },
+      { name: 'openrouter', ...JUDGE_PERSONAS.openrouter },
       { name: 'whisper',    ...JUDGE_PERSONAS.whisper },
       { name: 'classifier', ...JUDGE_PERSONAS.classifier },
     ]
@@ -284,7 +286,7 @@ export function testCView(container, { debug = false } = {}) {
 
     // Console one-liner
     const m = pendingLogEntry.models
-    const modelStr = ['azure', 'pitch', 'groq', 'groqTurbo', 'google', 'deepgram', 'whisper', 'classifier']
+    const modelStr = ['azure', 'pitch', 'groq', 'groqTurbo', 'google', 'deepgram', 'openrouter', 'whisper', 'classifier']
       .map(name => `${name}→${m[name] !== null ? 'T' + m[name] : '—'}`)
       .join(' ')
     const mark = userSaysCorrect ? '✓' : '✗'
@@ -532,7 +534,7 @@ export function testCView(container, { debug = false } = {}) {
 
     // Prepare accuracy log entry and show confirm buttons (debug only)
     const modelVotes = {}
-    for (const name of ['azure', 'pitch', 'groq', 'groqTurbo', 'google', 'deepgram', 'whisper', 'classifier']) {
+    for (const name of ['azure', 'pitch', 'groq', 'groqTurbo', 'google', 'deepgram', 'openrouter', 'whisper', 'classifier']) {
       const r = ensemble.results.find(r => r.model === name)
       modelVotes[name] = r ? r.tone : null
     }
@@ -666,7 +668,7 @@ export function testCView(container, { debug = false } = {}) {
     for (const r of results) resultMap[r.model] = r
 
     // Show pitch + classifier (whisper disabled — GitHub Pages lacks COOP/COEP headers for SharedArrayBuffer)
-    const shown = ['azure', 'pitch', 'groq', 'groqTurbo', 'google', 'deepgram', 'whisper', 'classifier']
+    const shown = ['azure', 'pitch', 'groq', 'groqTurbo', 'google', 'deepgram', 'openrouter', 'whisper', 'classifier']
 
     const cards = shown.map(modelName => {
       const persona = JUDGE_PERSONAS[modelName]
