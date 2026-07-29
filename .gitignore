@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 
+# Env / secrets — NEVER commit (this file was tracked & public until 2026-07-28;
+# every key that ever lived here must be treated as leaked and rotated)
+.env
+.env.*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
