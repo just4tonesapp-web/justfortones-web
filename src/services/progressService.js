@@ -109,6 +109,22 @@ export async function getResults() {
   return local.slice().reverse()
 }
 
+/** Max completed attempts allowed per test, per user, per (local) day */
+export const DAILY_TEST_LIMIT = 2
+
+/** How many times this test was completed today (local time) */
+export async function attemptsToday(testType) {
+  const results = await getResults()
+  const now = new Date()
+  return results.filter(r => {
+    if (r.test_type !== testType) return false
+    const d = new Date(r.created_at)
+    return d.getFullYear() === now.getFullYear()
+      && d.getMonth() === now.getMonth()
+      && d.getDate() === now.getDate()
+  }).length
+}
+
 /** Get the latest result for a specific test */
 export async function getLatestResult(testType) {
   const results = await getResults()

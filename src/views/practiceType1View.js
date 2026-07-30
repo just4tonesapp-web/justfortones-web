@@ -12,6 +12,7 @@ import { SYLLABLE_POOL, applyTone, shuffle, hasCharacter } from '../utils/pinyin
 import { playSyllable, playDisyllable, stopAllAudio } from '../utils/audio.js'
 import { hasRecording } from '../utils/recordingsManifest.js'
 import { DISYLLABLE_BY_PAIR } from '../utils/disyllableManifest.js'
+import { saveResult } from '../services/progressService.js'
 
 const ORD = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th' }
 const TONE_HINT = { 1: '─ high & flat', 2: '／ rising', 3: '∨ dip', 4: '＼ falling' }
@@ -229,6 +230,9 @@ export function practiceType1View(container) {
   function renderDone() {
     completed[mode] = true
     const total = items.length
+    // Practice completions are persisted too (type P1) — bound to the account
+    // when logged in, so the team can see per-user practice usage in the DB.
+    saveResult('P1', score, total, { set: mode, focus: FOCUS })
     const pct = Math.round((score / total) * 100)
     const other = mode === 'single' ? 'pair' : 'single'
     const otherLabel = other === 'single' ? '1-syllable words' : '2-syllable words'

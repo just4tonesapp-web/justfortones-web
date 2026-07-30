@@ -14,6 +14,7 @@ import { AudioEngine } from '../utils/audioEngine.js'
 import { detectToneWithPitch, normalizePeak } from '../utils/models/pitchModel.js'
 import { splitDisyllableAudio } from '../utils/audioSplit.js'
 import { DISYLLABLE_BY_PAIR } from '../utils/disyllableManifest.js'
+import { saveResult } from '../services/progressService.js'
 
 const SINGLES = [
   { char: '妈', base: 'ma', tone: 1, meaning: 'mother' },
@@ -40,6 +41,7 @@ export function practiceType2View(container) {
   const FOCUS_BADGE = adaptive ? `<div class="prac-focus">🎯 Targeting your <strong>${ORD[FOCUS]} tone</strong></div>` : ''
   let items = buildItems()
   let idx = 0, phase = 'ready', lastRec = null, feedback = null, isRecording = false, recTimer = null
+  let goodCount = 0 // items whose final take was judged good
 
   function buildItems() {
     const list = []
@@ -179,11 +181,14 @@ export function practiceType2View(container) {
     document.getElementById('p2-play-own')?.addEventListener('click', playOwn)
     document.getElementById('p2-play-demo')?.addEventListener('click', () => playDemo(item))
     document.getElementById('p2-next')?.addEventListener('click', () => {
+      if (feedback?.good) goodCount++
       idx++; phase = 'ready'; lastRec = null; feedback = null; render()
     })
   }
 
   function renderDone() {
+    // Persisted as P2 — bound to the account when logged in.
+    saveResult('P2', goodCount, items.length, { focus: FOCUS })
     container.innerHTML = `
       <div class="app-shell shell-top-center practice-shell">
         <div class="back-row"><button class="app-logo" id="p2-home">Just4Tones</button></div>
@@ -202,7 +207,7 @@ export function practiceType2View(container) {
     document.getElementById('p2-next').addEventListener('click', () => navigate('/practice-3'))
     document.getElementById('p2-back').addEventListener('click', () => navigate('/'))
     document.getElementById('p2-again').addEventListener('click', () => {
-      items = buildItems(); idx = 0; phase = 'ready'; lastRec = null; feedback = null; render()
+      items = buildItems(); idx = 0; goodCount = 0; phase = 'ready'; lastRec = null; feedback = null; render()
     })
   }
 

@@ -8,7 +8,7 @@ import { applyTone, shuffle } from '../utils/pinyin.js'
 import { AudioEngine } from '../utils/audioEngine.js'
 import { toneDetector } from '../utils/toneDetector.js'
 import { supabase } from '../supabaseClient.js'
-import { saveResult } from '../services/progressService.js'
+import { saveResult, attemptsToday, DAILY_TEST_LIMIT } from '../services/progressService.js'
 import { getMelSpectrogramImage } from '../utils/models/tonetModel.js'
 import { pickPraise, buildWrongFeedback } from '../utils/testCFeedback.js'
 import {
@@ -297,10 +297,12 @@ export function testCView(container, { debug = false } = {}) {
     log.push(pendingLogEntry)
     localStorage.setItem('j4t_accuracy_log', JSON.stringify(log))
 
-    // Persist to Supabase
-    const { data: { session } } = await supabase.auth.getSession()
+    // Persist to Supabase — bind to OUR account session (app_users id from
+    // j4t_user), not supabase.auth (never used by this app, always null).
+    let appUser = null
+    try { appUser = JSON.parse(localStorage.getItem('j4t_user') || 'null') } catch { /* ignore */ }
     const row = {
-      user_id: session?.user?.id || null,
+      user_id: appUser?.id || null,
       session_id: sessionId,
       question_num: pendingLogEntry.questionNum,
       char: pendingLogEntry.char,
@@ -339,7 +341,16 @@ export function testCView(container, { debug = false } = {}) {
     else startRecording()
   })
 
-  function startTest() {
+  async function startTest() {
+    // 2 completed attempts per test per day (client-side; counts saved results)
+    if (await attemptsToday('C') >= DAILY_TEST_LIMIT) {
+      const t = $('tc-toast')
+      t.className = 'feedback-toast incorrect'
+      t.textContent = `Daily limit reached — ${DAILY_TEST_LIMIT} tries per test per day. Come back tomorrow! 🌙`
+      requestAnimationFrame(() => t.classList.add('show'))
+      setTimeout(() => t.classList.remove('show'), 2600)
+      return
+    }
     generate()
     currentQ = 0; score = 0; answers = []; testStart = Date.now()
     container.querySelector('.back-row')?.classList.remove('hidden')

@@ -7,7 +7,7 @@ import { navigate } from '../router.js'
 import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle, hasCharacter } from '../utils/pinyin.js'
 import { speakChinese, playDisyllable } from '../utils/audio.js'
 import { DISYLLABLE_BY_PAIR, hasDisyllableRecording } from '../utils/disyllableManifest.js'
-import { saveResult } from '../services/progressService.js'
+import { saveResult, attemptsToday, DAILY_TEST_LIMIT } from '../services/progressService.js'
 import {
   analyzeDisyllabic, buildReportHTML, TONE_REPORT_CSS, bindAccordion,
 } from '../utils/toneReport.js'
@@ -140,7 +140,16 @@ export function testBView(container) {
   $('tb-start').addEventListener('click', startTest)
   $('tb-play').addEventListener('click', playCurrent)
 
-  function startTest() {
+  async function startTest() {
+    // 2 completed attempts per test per day (client-side; counts saved results)
+    if (await attemptsToday('B') >= DAILY_TEST_LIMIT) {
+      const t = $('tb-toast')
+      t.className = 'feedback-toast incorrect'
+      t.textContent = `Daily limit reached — ${DAILY_TEST_LIMIT} tries per test per day. Come back tomorrow! 🌙`
+      requestAnimationFrame(() => t.classList.add('show'))
+      setTimeout(() => t.classList.remove('show'), 2600)
+      return
+    }
     generate()
     currentQ = 0; score = 0; answers = []; testStart = Date.now()
     container.querySelector('.back-row')?.classList.remove('hidden')

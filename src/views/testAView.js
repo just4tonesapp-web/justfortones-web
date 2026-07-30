@@ -6,7 +6,7 @@ import { navigate } from '../router.js'
 import { SYLLABLE_POOL, applyTone, shuffle, hasCharacter } from '../utils/pinyin.js'
 import { playSyllable } from '../utils/audio.js'
 import { hasRecording } from '../utils/recordingsManifest.js'
-import { saveResult } from '../services/progressService.js'
+import { saveResult, attemptsToday, DAILY_TEST_LIMIT } from '../services/progressService.js'
 import {
   analyzeSingleSyllable, buildReportHTML, TONE_REPORT_CSS, bindAccordion,
 } from '../utils/toneReport.js'
@@ -100,7 +100,16 @@ export function testAView(container) {
   $('ta-start').addEventListener('click', startTest)
   $('ta-play').addEventListener('click', playCurrent)
 
-  function startTest() {
+  async function startTest() {
+    // 2 completed attempts per test per day (client-side; counts saved results)
+    if (await attemptsToday('A') >= DAILY_TEST_LIMIT) {
+      const t = $('ta-toast')
+      t.className = 'feedback-toast incorrect'
+      t.textContent = `Daily limit reached — ${DAILY_TEST_LIMIT} tries per test per day. Come back tomorrow! 🌙`
+      requestAnimationFrame(() => t.classList.add('show'))
+      setTimeout(() => t.classList.remove('show'), 2600)
+      return
+    }
     generate()
     currentQ = 0; score = 0; answers = []; testStart = Date.now()
     // Restore the test chrome (hidden while the result screen is up).

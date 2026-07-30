@@ -10,6 +10,7 @@ import { navigate } from '../router.js'
 import { applyTone, shuffle } from '../utils/pinyin.js'
 import { playClip, stopAllAudio } from '../utils/audio.js'
 import { TONE_CHANGE } from '../utils/toneChangeWords.js'
+import { saveResult } from '../services/progressService.js'
 
 const RULES = [
   { tag: 'Rule 1', title: 'Two 3rd tones', text: 'When a 3rd tone is followed by another 3rd tone, the <b>first</b> becomes a <b>2nd</b> tone.', eg: '你好 nǐ + hǎo → <b>ní hǎo</b>' },
@@ -148,6 +149,8 @@ export function practiceType3View(container) {
   }
 
   function renderDone() {
+    // Persisted as P3 — bound to the account when logged in.
+    saveResult('P3', score, qs.length, {})
     const pct = Math.round((score / qs.length) * 100)
     container.innerHTML = `
       <div class="app-shell shell-top-center practice-shell">
