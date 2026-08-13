@@ -83,6 +83,27 @@ function setupAccountBar() {
     })
   }
   bar.style.display = getUser() ? 'flex' : 'none'
+  setupGuestPill()
+}
+
+// ── Guest-mode pill ──
+// Guests' results never reach the cloud (that's how a whole cohort of student
+// trials produced zero rows). A persistent pill reminds guests and routes them
+// to signup — logging in then auto-uploads the results already on the device.
+function setupGuestPill() {
+  let pill = document.getElementById('guest-pill')
+  if (!pill) {
+    pill = document.createElement('button')
+    pill.id = 'guest-pill'
+    pill.className = 'guest-pill'
+    pill.type = 'button'
+    pill.innerHTML = '👤 Guest mode — results aren\'t saved. <strong>Create account</strong>'
+    document.body.appendChild(pill)
+    pill.addEventListener('click', () => navigate('/login'))
+  }
+  const isGuest = !getUser() && sessionStorage.getItem('j4t_guest') === '1'
+  const onLogin = (window.location.hash.replace('#', '') || '/') === '/login'
+  pill.style.display = isGuest && !onLogin ? 'block' : 'none'
 }
 
 // ── Register routes ──
@@ -122,5 +143,6 @@ route('/practice-characters', guarded(practiceCharView))
 // authView dispatches 'j4t-auth' after login/signup/logout so the account bar
 // re-renders. No async session fetch — the session is purely local.
 window.addEventListener('j4t-auth', setupAccountBar)
+window.addEventListener('hashchange', setupGuestPill) // guest pill follows route changes
 setupAccountBar()
 startRouter()

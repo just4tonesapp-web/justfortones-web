@@ -50,10 +50,10 @@ export function authView(container) {
 
           <div class="auth-divider"><span>or</span></div>
 
-          <button class="btn btn-secondary btn-lg auth-guest" id="auth-guest">
-            Continue as Guest
+          <button class="auth-guest-link" id="auth-guest">
+            Continue as guest (results won't be saved)
           </button>
-          <p class="auth-guest-note">Guest progress won't be saved across devices</p>
+          <p class="auth-guest-note">Guest results stay on this device only — they can't be recovered later or included in class reports. Creating an account takes 10 seconds and needs no email.</p>
         </div>
       </div>
     `
@@ -323,13 +323,27 @@ const scopedCSS = `
     margin-top: 4px;
   }
 
-  /* Guest */
-  .auth-guest { width: 100%; }
+  /* Guest — deliberately demoted to a text link: guest results are a data
+     black hole (they never reach the cloud), so signup is the primary path. */
+  .auth-guest-link {
+    display: block;
+    margin: 0 auto;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.85rem;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 4px;
+  }
+  .auth-guest-link:hover { color: var(--text-secondary); }
   .auth-guest-note {
     text-align: center;
     font-size: 0.75rem;
     color: var(--text-muted);
     margin-top: 8px;
+    line-height: 1.5;
   }
 
   .auth-support {
