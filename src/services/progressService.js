@@ -15,6 +15,20 @@ import { supabase } from '../supabaseClient.js'
 
 const LS_KEY = 'j4t_progress'
 
+// If the backing Supabase project ever changes (e.g. the Sep 2026 account
+// migration), rows in localStorage still carry `synced` flags that were true
+// for the OLD database. Reset them once per project switch so everything
+// re-uploads to the new project the next time the user logs in.
+const SYNC_TARGET = import.meta.env.VITE_SUPABASE_URL || 'local'
+try {
+  if (localStorage.getItem('j4t_sync_target') !== SYNC_TARGET) {
+    const rows = JSON.parse(localStorage.getItem(LS_KEY) || '[]')
+    rows.forEach(r => { delete r.synced })
+    localStorage.setItem(LS_KEY, JSON.stringify(rows))
+    localStorage.setItem('j4t_sync_target', SYNC_TARGET)
+  }
+} catch { /* ignore */ }
+
 function currentUser() {
   try { return JSON.parse(localStorage.getItem('j4t_user') || 'null') } catch { return null }
 }
