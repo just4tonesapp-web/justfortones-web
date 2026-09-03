@@ -1,0 +1,24 @@
+# Full E2E smoke against the LIVE site — every main push + daily.
+# Red X here = something real is broken for users (pages, tests, practices,
+# daily limit, mic flow, Supabase RPCs, azure proxy, audio assets).
+name: e2e-smoke
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm ci
+      - name: Run E2E smoke vs production
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node scripts/e2e-smoke.mjs
