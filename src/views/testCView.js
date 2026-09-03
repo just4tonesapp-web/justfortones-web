@@ -118,6 +118,7 @@ export function testCView(container, { debug = false } = {}) {
 
   // Start loading models in the background immediately
   toneDetector.init((model, status, pct) => {
+    if (status === 'ready') console.log(`[ToneDetector] ready: ${model}`)
     updateModelStatus()
   })
 
@@ -144,8 +145,10 @@ export function testCView(container, { debug = false } = {}) {
     })
   }
 
-  // Show initial state immediately
-  updateModelStatus()
+  // NOTE: the initial updateModelStatus() call must come AFTER
+  // container.innerHTML below — the badge element doesn't exist yet here.
+  // (On re-mounts the singleton fires no more events, so a too-early call
+  // left the badge frozen on its placeholder text forever.)
 
   // Items used in the previous attempt — excluded on retake.
   let previousChars = new Set()
@@ -269,6 +272,7 @@ export function testCView(container, { debug = false } = {}) {
   container.appendChild(style)
 
   const $ = (id) => document.getElementById(id)
+  updateModelStatus() // first paint — the badge element exists only from here on
   $('tc-home').addEventListener('click', () => navigate('/'))
   $('tc-start').addEventListener('click', startTest)
   $('tc-next').addEventListener('click', nextQuestion)
