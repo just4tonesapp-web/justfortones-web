@@ -123,16 +123,20 @@ export function testCView(container, { debug = false } = {}) {
   })
 
   function updateModelStatus() {
+    // NOTE: persona spread FIRST — personas carry a display `name` ("Azure",
+    // "Maestro"…) that must not clobber the lookup key. With the spread last,
+    // every loaded[] lookup used the display name and the badge showed all
+    // models as off since the day it was written.
     const judges = [
-      { name: 'azure',      ...JUDGE_PERSONAS.azure },
-      { name: 'pitch',      ...JUDGE_PERSONAS.pitch,      alwaysOn: true },
-      { name: 'groq',       ...JUDGE_PERSONAS.groq },
-      { name: 'groqTurbo',  ...JUDGE_PERSONAS.groqTurbo },
-      { name: 'google',     ...JUDGE_PERSONAS.google },
-      { name: 'deepgram',  ...JUDGE_PERSONAS.deepgram },
-      { name: 'openrouter', ...JUDGE_PERSONAS.openrouter },
-      { name: 'whisper',    ...JUDGE_PERSONAS.whisper },
-      { name: 'classifier', ...JUDGE_PERSONAS.classifier },
+      { ...JUDGE_PERSONAS.azure,      name: 'azure' },
+      { ...JUDGE_PERSONAS.pitch,      name: 'pitch',      alwaysOn: true },
+      { ...JUDGE_PERSONAS.groq,       name: 'groq' },
+      { ...JUDGE_PERSONAS.groqTurbo,  name: 'groqTurbo' },
+      { ...JUDGE_PERSONAS.google,     name: 'google' },
+      { ...JUDGE_PERSONAS.deepgram,   name: 'deepgram' },
+      { ...JUDGE_PERSONAS.openrouter, name: 'openrouter' },
+      { ...JUDGE_PERSONAS.whisper,    name: 'whisper' },
+      { ...JUDGE_PERSONAS.classifier, name: 'classifier' },
     ]
     const parts = judges.map(j => {
       if (j.alwaysOn || toneDetector.loaded[j.name]) return `${j.emoji} ${j.name}`
