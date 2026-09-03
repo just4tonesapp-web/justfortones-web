@@ -187,8 +187,6 @@ export function practiceType2View(container) {
   }
 
   function renderDone() {
-    // Persisted as P2 — bound to the account when logged in.
-    saveResult('P2', goodCount, items.length, { focus: FOCUS })
     container.innerHTML = `
       <div class="app-shell shell-top-center practice-shell">
         <div class="back-row"><button class="app-logo" id="p2-home">Just4Tones</button></div>
@@ -209,6 +207,9 @@ export function practiceType2View(container) {
     document.getElementById('p2-again').addEventListener('click', () => {
       items = buildItems(); idx = 0; goodCount = 0; phase = 'ready'; lastRec = null; feedback = null; render()
     })
+
+    // Persist AFTER the UI is on screen — a save error must never eat the page.
+    saveResult('P2', goodCount, items.length, { focus: FOCUS })
   }
 
   function inject() {

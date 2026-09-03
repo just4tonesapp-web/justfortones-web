@@ -230,9 +230,6 @@ export function practiceType1View(container) {
   function renderDone() {
     completed[mode] = true
     const total = items.length
-    // Practice completions are persisted too (type P1) — bound to the account
-    // when logged in, so the team can see per-user practice usage in the DB.
-    saveResult('P1', score, total, { set: mode, focus: FOCUS })
     const pct = Math.round((score / total) * 100)
     const other = mode === 'single' ? 'pair' : 'single'
     const otherLabel = other === 'single' ? '1-syllable words' : '2-syllable words'
@@ -261,6 +258,11 @@ export function practiceType1View(container) {
     document.getElementById('p1-other')?.addEventListener('click', () => start(other))
     document.getElementById('p1-speak')?.addEventListener('click', () => navigate('/practice-2'))
     document.getElementById('p1-speak2')?.addEventListener('click', () => navigate('/practice-2'))
+
+    // Persist AFTER the UI is on screen — a save error must never eat the
+    // results page (a `focus: FOCUS` ReferenceError here did exactly that
+    // and made "See results" look dead for a month).
+    saveResult('P1', score, total, { set: mode, focus: TARGET })
   }
 
   function inject() {

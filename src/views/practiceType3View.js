@@ -149,8 +149,6 @@ export function practiceType3View(container) {
   }
 
   function renderDone() {
-    // Persisted as P3 — bound to the account when logged in.
-    saveResult('P3', score, qs.length, {})
     const pct = Math.round((score / qs.length) * 100)
     container.innerHTML = `
       <div class="app-shell shell-top-center practice-shell">
@@ -171,6 +169,9 @@ export function practiceType3View(container) {
     document.getElementById('p3-back').addEventListener('click', () => navigate('/'))
     document.getElementById('p3-rules').addEventListener('click', () => { stage = 'intro'; qs = buildSession(); renderIntro() })
     document.getElementById('p3-again').addEventListener('click', () => { qs = buildSession(); idx = 0; score = 0; answered = false; selected = null; render() })
+
+    // Persist AFTER the UI is on screen — a save error must never eat the page.
+    saveResult('P3', score, qs.length, {})
   }
 
   function inject() {
