@@ -17,8 +17,8 @@ jobs:
         # exactly how the Aug/Sep 2026 pause went unnoticed for a week.
         run: |
           RESP=$(curl -sS --fail-with-body --max-time 20 -X POST \
-            'https://vhumyfderrygpsvllysk.supabase.co/rest/v1/rpc/app_login' \
-            -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZodW15ZmRlcnJ5Z3BzdmxseXNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3OTEyMDAsImV4cCI6MjA4NDM2NzIwMH0.NxYXGFrl7-ORDKoPrwlzwljwbf8w67moF9UAifGYeFc' \
+            'https://gwpjbqvguepqzarsisrr.supabase.co/rest/v1/rpc/app_login' \
+            -H 'apikey: sb_publishable_yjsJriKKvIPDPrHgKYq1wA_pQWYAu1M' \
             -H 'Content-Type: application/json' \
             -d '{"p_username":"__keepalive__","p_password":"__keepalive__"}')
           echo "response: ${RESP:0:200}"
