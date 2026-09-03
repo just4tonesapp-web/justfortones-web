@@ -8,6 +8,7 @@
 // Accuracy estimate: ~55-65% (vs ~10% for original YIN approach)
 // ═══════════════════════════════════════
 import { ACF2PLUS, YIN } from 'pitchfinder'
+import { splitDisyllableAudio } from '../audioSplit.js'
 
 /**
  * Peak-normalize samples so quiet recordings aren't killed by the absolute
@@ -42,29 +43,29 @@ const TONE_CONTOURS = {
  * @param {number} sampleRate
  * @returns {number|null} detected tone (1-4) or null if insufficient signal
  */
-export function detectToneWithPitch(samples, sampleRate) {
-  samples = normalizePeak(samples)
+/** Framewise pitch extraction shared by all detectors. */
+function collectPitches(samples, sampleRate) {
   const acf = ACF2PLUS({ sampleRate })
   const yin = YIN({ sampleRate })
-
   const frameSize = 2048
   const hopSize = Math.floor(frameSize / 2)
   const pitches = []
-
   for (let start = 0; start + frameSize <= samples.length; start += hopSize) {
     const frame = samples.slice(start, start + frameSize)
-
-    // RMS gate — skip silent frames
     let rms = 0
     for (let i = 0; i < frame.length; i++) rms += frame[i] * frame[i]
     rms = Math.sqrt(rms / frame.length)
     if (rms < 0.008) continue
-
-    // Try ACF2PLUS first (more robust), fall back to YIN
     let pitch = acf(frame)
     if (!pitch || pitch < 70 || pitch > 600) pitch = yin(frame)
     if (pitch && pitch >= 70 && pitch <= 600) pitches.push(pitch)
   }
+  return pitches
+}
+
+export function detectToneWithPitch(samples, sampleRate) {
+  samples = normalizePeak(samples)
+  const pitches = collectPitches(samples, sampleRate)
 
   if (pitches.length < 4) return null
 
@@ -103,6 +104,53 @@ export function detectToneWithPitch(samples, sampleRate) {
   }
 
   return bestScore > 0.05 ? bestTone : null
+}
+
+/**
+ * Disyllable detection with a SHARED pitch scale (Practice II).
+ *
+ * Normalizing each syllable independently erases the register relationship
+ * between them — a correctly-low 3rd tone next to a rising 2nd tone came out
+ * looking identical (both "low, rising at the end") and got misjudged. Split
+ * at the energy valley, but normalize both halves against the WHOLE word's
+ * p10/p90 so "low" stays low.
+ *
+ * Returns { t1, t2, scores1, scores2 } — scores let callers apply practice-
+ * mode leniency (accept the target when it's within a margin of the winner).
+ */
+export function detectTonePairWithPitch(samples, sampleRate) {
+  samples = normalizePeak(samples)
+  const { first, second } = splitDisyllableAudio(samples, sampleRate)
+  const p1 = collectPitches(first, sampleRate)
+  const p2 = collectPitches(second, sampleRate)
+  if (p1.length < 3 || p2.length < 3) return { t1: null, t2: null, scores1: null, scores2: null }
+
+  const pool = [...p1, ...p2].sort((a, b) => a - b)
+  const p10 = pool[Math.floor(pool.length * 0.1)]
+  const p90 = pool[Math.floor(pool.length * 0.9)]
+  // Whole-word flatness guard (mirrors the single-syllable check): if pitch
+  // barely moves across BOTH syllables, stretching that sliver to a 1-5 scale
+  // just amplifies noise — it's a flat-high + flat-high word (T1+T1).
+  const poolMean = pool.reduce((s, v) => s + v, 0) / pool.length
+  if ((p90 - p10) / poolMean < 0.06) {
+    const flat = { 1: 1, 2: 0, 3: 0, 4: 0 }
+    return { t1: 1, t2: 1, scores1: flat, scores2: { ...flat } }
+  }
+  const range = (p90 - p10) || 1
+  const norm = (ps) => ps.map(p => Math.max(1, Math.min(5, 1 + ((p - p10) / range) * 4)))
+
+  const judge = (ps) => {
+    const contour = resample(norm(ps), 10)
+    const scores = {}
+    let best = null, bestScore = -Infinity
+    for (let t = 1; t <= 4; t++) {
+      scores[t] = scoreTone(contour, t)
+      if (scores[t] > bestScore) { bestScore = scores[t]; best = t }
+    }
+    return { tone: bestScore > 0.05 ? best : null, scores }
+  }
+  const j1 = judge(p1), j2 = judge(p2)
+  return { t1: j1.tone, t2: j2.tone, scores1: j1.scores, scores2: j2.scores }
 }
 
 /**
@@ -174,7 +222,11 @@ function scoreTone(contour, toneNum) {
       const dipPenalty = hasDip ? 0.3 : 0
       // Bonus: T2 minimum should be near the start (first 30%)
       const minAtStart = minPos <= 0.3 ? 0.15 : 0
-      return 0.5 * Math.max(0, pearson) + 0.5 * riseScore - dipPenalty + minAtStart
+      // A rise confined to the tail after a long LOW stretch is the 3rd tone's
+      // final rise, not a 2nd-tone climb — T2 should rise through the middle.
+      const midRise = contour[6] - contour[0]              // rise achieved by 70%
+      const lateOnlyRise = riseScore > 0.2 && midRise < 0.5 && mean < 2.6 ? 0.3 : 0
+      return 0.5 * Math.max(0, pearson) + 0.5 * riseScore - dipPenalty + minAtStart - lateOnlyRise
     }
     case 3: {
       // Low-dipping (214): valley in middle, then rises back up.
@@ -186,7 +238,12 @@ function scoreTone(contour, toneNum) {
       const dipScore  = (hasMidDip && recovers && dipsBelow) ? Math.max(0, (endMean - minVal) / 4) : 0
       // Bonus for classic 214 shape: starts mid, goes low, comes back high
       const classicShape = (startMean < 3.5 && minVal < 2.5 && endMean > 2.5) ? 0.1 : 0
-      return 0.5 * Math.max(0, pearson) + 0.5 * dipScore + classicShape
+      // Real connected-speech T3 often STARTS low (no dip below an already-low
+      // start) and just stays low, with an optional final rise. That's correct
+      // 3rd tone — score it on low register instead of requiring the dip.
+      const lowRegister = mean < 2.4 && startMean < 2.2 && minVal < 1.8
+      const lowScore = lowRegister ? 0.45 + Math.min(0.25, Math.max(0, (endMean - minVal) / 8)) : 0
+      return Math.max(0.5 * Math.max(0, pearson) + 0.5 * dipScore + classicShape, lowScore)
     }
     case 4: {
       // High-falling: start clearly higher than end

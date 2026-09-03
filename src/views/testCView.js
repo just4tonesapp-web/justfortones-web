@@ -416,17 +416,27 @@ export function testCView(container, { debug = false } = {}) {
 
     $('tc-rec-label').textContent = 'Tap to Stop'
     $('tc-rec-icon').textContent = '⏺'
-    $('tc-rec-status').textContent = 'Say the word, then tap to stop'
+    $('tc-rec-status').textContent = 'Say the word — it stops by itself'
     $('tc-record').classList.add('recording')
 
-    // Level meter (visual feedback only — the user decides when to stop)
+    // Level meter + hybrid auto-stop: once speech is heard, 900ms of silence
+    // ends the take (the survey's top Test-3 complaint was stop-button timing);
+    // tapping ⏺ still stops immediately.
+    let spoke = false, quietMs = 0
+    const startedAt = Date.now()
     levelInterval = setInterval(() => {
       const rms = engine.getRMS()
       const pct = Math.min(100, rms * 500)
       $('tc-level-bar').style.width = `${pct}%`
+      if (!isRecording) return
+      if (rms > 0.012) { spoke = true; quietMs = 0 }
+      else if (spoke) {
+        quietMs += 50
+        if (quietMs >= 900 && Date.now() - startedAt > 700) stopRecording()
+      }
     }, 50)
 
-    // Safety cap only — recording is user-controlled
+    // Safety cap
     recordTimer = setTimeout(() => { if (isRecording) stopRecording() }, 12000)
   }
 

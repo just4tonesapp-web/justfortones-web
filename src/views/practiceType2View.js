@@ -11,8 +11,7 @@ import { navigate } from '../router.js'
 import { applyTone, shuffle } from '../utils/pinyin.js'
 import { playSyllable, playDisyllable, playPcm, stopAllAudio } from '../utils/audio.js'
 import { AudioEngine } from '../utils/audioEngine.js'
-import { detectToneWithPitch, normalizePeak } from '../utils/models/pitchModel.js'
-import { splitDisyllableAudio } from '../utils/audioSplit.js'
+import { detectToneWithPitch, detectTonePairWithPitch, normalizePeak } from '../utils/models/pitchModel.js'
 import { DISYLLABLE_BY_PAIR } from '../utils/disyllableManifest.js'
 import { saveResult } from '../services/progressService.js'
 
@@ -41,6 +40,7 @@ export function practiceType2View(container) {
   const FOCUS_BADGE = adaptive ? `<div class="prac-focus">🎯 Targeting your <strong>${ORD[FOCUS]} tone</strong></div>` : ''
   let items = buildItems()
   let idx = 0, phase = 'ready', lastRec = null, feedback = null, isRecording = false, recTimer = null
+  let autoStopTimer = null
   let goodCount = 0 // items whose final take was judged good
 
   function buildItems() {
@@ -80,12 +80,25 @@ export function practiceType2View(container) {
     const ok = await engine.start()
     if (!ok) { feedback = { good: false, text: 'Couldn\'t access the microphone — allow mic access and try again.' }; phase = 'done'; render(); return }
     isRecording = true; phase = 'recording'; render()
-    recTimer = setTimeout(() => stopRec(item), 20000) // long safety cap only — the user stops via the button
+    recTimer = setTimeout(() => stopRec(item), 20000) // safety cap
+    // Hybrid stop (survey + team feedback: pure tap-to-stop is fiddly): once
+    // speech is heard, 900ms of silence auto-stops; the ⏺ button still works.
+    let spoke = false, quietMs = 0, started = Date.now()
+    autoStopTimer = setInterval(() => {
+      if (!isRecording) { clearInterval(autoStopTimer); return }
+      const rms = engine.getRMS()
+      if (rms > 0.012) { spoke = true; quietMs = 0 }
+      else if (spoke) {
+        quietMs += 100
+        if (quietMs >= 900 && Date.now() - started > 700) { clearInterval(autoStopTimer); stopRec(item) }
+      }
+    }, 100)
   }
 
   function stopRec(item) {
     if (!isRecording) return
     clearTimeout(recTimer)
+    clearInterval(autoStopTimer)
     lastRec = engine.stop()
     isRecording = false
 
@@ -98,19 +111,23 @@ export function practiceType2View(container) {
         feedback = { good: ok, text: ok ? pick(PRAISE) : pick(NUDGE) }
       }
     } else {
-      // Disyllable: split the take at the energy valley and judge each
-      // syllable with the free on-device pitch model.
-      const { first, second } = splitDisyllableAudio(lastRec.samples, lastRec.sampleRate)
-      const d1 = detectToneWithPitch(first, lastRec.sampleRate)
-      const d2 = detectToneWithPitch(second, lastRec.sampleRate)
+      // Disyllable: split at the energy valley, judge both halves on a SHARED
+      // pitch scale (independent scales erased the register contrast and
+      // misjudged correct takes — found via a learner's real 球场 recording).
+      const { t1: d1, t2: d2, scores1, scores2 } = detectTonePairWithPitch(lastRec.samples, lastRec.sampleRate)
       if (d1 === null && d2 === null) {
         feedback = { good: false, text: 'We couldn\'t hear that clearly — try again a little closer to the mic.' }
       } else {
-        // Half-third rule: a 3rd tone on the FIRST syllable is normally spoken
-        // as a low falling tone in real words, which the contour matcher hears
-        // as a fall — don't mark that wrong.
-        const ok1 = d1 === item.t1 || (item.t1 === 3 && d1 === 4)
-        const ok2 = d2 === item.t2
+        // Practice-mode leniency: exact match, OR the target tone scores within
+        // 80% of the winner (contours are ambiguous in connected speech), OR
+        // the half-third rule (first-syllable T3 realized as a low fall).
+        const near = (scores, target) => {
+          if (!scores) return false
+          const best = Math.max(...Object.values(scores))
+          return best > 0.05 && scores[target] >= best * 0.8
+        }
+        const ok1 = d1 === item.t1 || near(scores1, item.t1) || (item.t1 === 3 && d1 === 4)
+        const ok2 = d2 === item.t2 || near(scores2, item.t2)
         const p1 = applyTone(item.syl1, item.t1)
         const p2 = applyTone(item.syl2, item.t2)
         if (ok1 && ok2) {
@@ -152,7 +169,7 @@ export function practiceType2View(container) {
           <div class="p2-rec-zone">
             ${phase === 'recording' ? `
               <button class="p2-mic recording" id="p2-stop"><span class="p2-mic-icon">⏺</span></button>
-              <div class="p2-rec-label">Recording… <span class="p2-rec-tap">tap to stop</span></div>
+              <div class="p2-rec-label">Recording… <span class="p2-rec-tap">stops by itself when you finish (or tap ⏺)</span></div>
             ` : `
               <button class="p2-mic" id="p2-record"><span class="p2-mic-icon">🎤</span></button>
               <div class="p2-rec-label">${lastRec ? 'Tap to record again' : 'Tap and say the word'}</div>
@@ -218,7 +235,7 @@ export function practiceType2View(container) {
     container.appendChild(style)
   }
 
-  function cleanup() { if (isRecording) { clearTimeout(recTimer); engine.stop() } stopAllAudio() }
+  function cleanup() { if (isRecording) { clearTimeout(recTimer); clearInterval(autoStopTimer); engine.stop() } stopAllAudio() }
   return cleanup
 }
 
