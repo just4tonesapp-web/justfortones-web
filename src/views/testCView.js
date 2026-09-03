@@ -273,6 +273,10 @@ export function testCView(container, { debug = false } = {}) {
 
   const $ = (id) => document.getElementById(id)
   updateModelStatus() // first paint — the badge element exists only from here on
+  // Belt-and-braces: async loads can settle in orders the event wiring misses;
+  // refresh the badge for the first 10s so it always converges on reality.
+  const badgePoll = setInterval(updateModelStatus, 1000)
+  setTimeout(() => clearInterval(badgePoll), 10000)
   $('tc-home').addEventListener('click', () => navigate('/'))
   $('tc-start').addEventListener('click', startTest)
   $('tc-next').addEventListener('click', nextQuestion)

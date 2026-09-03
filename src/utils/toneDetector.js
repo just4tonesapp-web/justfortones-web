@@ -209,11 +209,17 @@ export class ToneDetector {
     // (e.g. a cloud model whose fetch never resolves) can't freeze detection
     // forever — the always-on pitch model still returns a vote. Each job already
     // resolves to null on error; timing out also resolves to null.
-    const JOB_TIMEOUT_MS = 5000
+    // 9s bound: in-browser Whisper inference can block the main thread for
+    // seconds, and cloud responses can only be PROCESSED once it yields — a 5s
+    // bound silently voided every cloud vote (found 2026-09-03: accuracy_log
+    // showed pitch-only voting while direct API probes were healthy).
+    const JOB_TIMEOUT_MS = 9000
+    const t0 = performance.now()
     const bounded = jobs.map(j =>
       Promise.race([j, new Promise(res => setTimeout(() => res(null), JOB_TIMEOUT_MS))])
     )
     const results = (await Promise.all(bounded)).filter(Boolean)
+    console.log(`[detect] ${Math.round(performance.now() - t0)}ms, ${results.length}/${jobs.length} jobs returned`)
 
     // Debug: log each model's vote
     const voteStr = results.map(r => `${r.model}→T${r.tone}(w=${r.weight})`).join('  ')
@@ -261,6 +267,8 @@ export class ToneDetector {
 
 // Singleton — one instance shared across views
 export const toneDetector = new ToneDetector()
+// Debug handle (the model-status badge lied to us once; never fly blind again)
+if (typeof window !== 'undefined') window.__toneDetector = toneDetector
 
 // ── Silence trimmer ──────────────────────────────────────────────────────────
 function trimSilence(samples, sampleRate, rmsThreshold = 0.008) {
