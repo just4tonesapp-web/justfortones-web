@@ -12,10 +12,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Supabase REST
+        # NOTE: no pipe after curl — a pipe (e.g. "| head") masks curl's exit
+        # code and the job stays green while the project is down. That is
+        # exactly how the Aug/Sep 2026 pause went unnoticed for a week.
         run: |
-          curl -s -X POST \
+          RESP=$(curl -sS --fail-with-body --max-time 20 -X POST \
             'https://vhumyfderrygpsvllysk.supabase.co/rest/v1/rpc/app_login' \
             -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZodW15ZmRlcnJ5Z3BzdmxseXNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3OTEyMDAsImV4cCI6MjA4NDM2NzIwMH0.NxYXGFrl7-ORDKoPrwlzwljwbf8w67moF9UAifGYeFc' \
             -H 'Content-Type: application/json' \
-            -d '{"p_username":"__keepalive__","p_password":"__keepalive__"}' \
-            | head -c 200
+            -d '{"p_username":"__keepalive__","p_password":"__keepalive__"}')
+          echo "response: ${RESP:0:200}"
+          # the probe user doesn't exist, so a LIVE server answers {"error":"invalid"}
+          case "$RESP" in
+            *invalid*) echo "Supabase is alive." ;;
+            *) echo "Unexpected response — Supabase may be down."; exit 1 ;;
+          esac
