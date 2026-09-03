@@ -284,6 +284,36 @@ export function testCView(container, { debug = false } = {}) {
   // Stable session ID for grouping questions in one test run
   const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
 
+  // Insert one detection row (usage/analytics: every ensemble run is logged,
+  // so "how many times did user X use the models" is answerable from the DB).
+  async function insertLogRow(entry, userCorrect) {
+    let appUser = null
+    try { appUser = JSON.parse(localStorage.getItem('j4t_user') || 'null') } catch { /* ignore */ }
+    const m = entry.models
+    const { error } = await supabase.from('accuracy_log').insert({
+      user_id: appUser?.id || null,
+      session_id: sessionId,
+      question_num: entry.questionNum,
+      char: entry.char,
+      base: entry.base,
+      target_tone: entry.targetTone,
+      ensemble_tone: entry.ensembleTone,
+      confidence: entry.confidence,
+      agreement: entry.agreement,
+      azure_vote: m.azure,
+      pitch_vote: m.pitch,
+      groq_vote: m.groq,
+      groq_turbo_vote: m.groqTurbo,
+      google_vote: m.google,
+      deepgram_vote: m.deepgram,
+      whisper_vote: m.whisper,
+      classifier_vote: m.classifier,
+      auto_correct: entry.autoCorrect,
+      user_correct: userCorrect,
+    })
+    if (error) console.warn('[accuracy] Supabase insert failed:', error.message)
+  }
+
   async function logAccuracy(userSaysCorrect) {
     if (!pendingLogEntry) return
     pendingLogEntry.userCorrect = userSaysCorrect
@@ -301,33 +331,7 @@ export function testCView(container, { debug = false } = {}) {
     log.push(pendingLogEntry)
     localStorage.setItem('j4t_accuracy_log', JSON.stringify(log))
 
-    // Persist to Supabase — bind to OUR account session (app_users id from
-    // j4t_user), not supabase.auth (never used by this app, always null).
-    let appUser = null
-    try { appUser = JSON.parse(localStorage.getItem('j4t_user') || 'null') } catch { /* ignore */ }
-    const row = {
-      user_id: appUser?.id || null,
-      session_id: sessionId,
-      question_num: pendingLogEntry.questionNum,
-      char: pendingLogEntry.char,
-      base: pendingLogEntry.base,
-      target_tone: pendingLogEntry.targetTone,
-      ensemble_tone: pendingLogEntry.ensembleTone,
-      confidence: pendingLogEntry.confidence,
-      agreement: pendingLogEntry.agreement,
-      azure_vote: m.azure,
-      pitch_vote: m.pitch,
-      groq_vote: m.groq,
-      groq_turbo_vote: m.groqTurbo,
-      google_vote: m.google,
-      deepgram_vote: m.deepgram,
-      whisper_vote: m.whisper,
-      classifier_vote: m.classifier,
-      auto_correct: pendingLogEntry.autoCorrect,
-      user_correct: userSaysCorrect,
-    }
-    const { error } = await supabase.from('accuracy_log').insert(row)
-    if (error) console.warn('[accuracy] Supabase insert failed:', error.message)
+    await insertLogRow(pendingLogEntry, userSaysCorrect)
 
     // Hide confirm buttons
     $('tc-confirm-wrap').classList.add('hidden')
@@ -565,7 +569,14 @@ export function testCView(container, { debug = false } = {}) {
       autoCorrect: passed,
       timestamp: new Date().toISOString(),
     }
-    if (debug) $('tc-confirm-wrap').classList.remove('hidden')
+    if (debug) {
+      // Debug: wait for the human yes/no label before writing the row.
+      $('tc-confirm-wrap').classList.remove('hidden')
+    } else {
+      // Normal use: log every detection immediately (user_correct stays null).
+      insertLogRow(pendingLogEntry, null)
+      pendingLogEntry = null
+    }
 
     // Show appropriate action buttons
     if (passed) {

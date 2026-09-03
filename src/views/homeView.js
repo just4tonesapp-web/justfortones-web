@@ -43,6 +43,10 @@ export function homeView(container) {
             <span class="s2-prac-icon">🔄</span>
             <span class="s2-prac-title">Tone Changes</span>
           </button>
+          <button class="s2-prac-btn" data-nav="/practice-4">
+            <span class="s2-prac-icon">🀄</span>
+            <span class="s2-prac-title">Polyphones</span>
+          </button>
         </div>
       </div>
     </div>
@@ -122,8 +126,11 @@ const scopedCSS = `
   }
   .s2-prac-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 8px;
+  }
+  @media (max-width: 480px) {
+    .s2-prac-grid { grid-template-columns: repeat(2, 1fr); }
   }
   .s2-prac-btn {
     display: flex;
