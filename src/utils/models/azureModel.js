@@ -1,188 +1,90 @@
 // ═══════════════════════════════════════
-// Azure Speech — Pronunciation Assessment for Mandarin tones
+// Azure Speech — Mandarin recognition via OUR server-side proxy.
 //
-// Uses Microsoft's SAPI phoneme system which returns explicit
-// tone numbers (1-5) with accuracy scores and probability
-// distribution across all tones.
-//
-// Requires VITE_AZURE_SPEECH_KEY and VITE_AZURE_SPEECH_REGION in .env.local
-// Free tier: 5 audio hours/month (~6,000 single-syllable assessments)
+// The key lives in a Supabase Edge Function secret (azure-stt), never in
+// the bundle: GitHub push-protection blocks Azure keys in public repos,
+// and a leaked key bills our subscription. The function returns the
+// recognized zh-CN text; char→tone mapping stays here.
+// (Replaced the microsoft-cognitiveservices-speech-sdk WebSocket path —
+// also saves ~1MB of bundle.)
 // ═══════════════════════════════════════
 
-import * as sdk from 'microsoft-cognitiveservices-speech-sdk'
 import { CHAR_TONE_MAP } from './whisperModel.js'
+import { resampleTo16k, encodeWAV } from './groqModel.js'
 
-let speechKey = null
-let speechRegion = null
+let endpoint = null
+let apikey = null
 
 export async function loadAzure() {
-  speechKey = import.meta.env.VITE_AZURE_SPEECH_KEY
-  speechRegion = import.meta.env.VITE_AZURE_SPEECH_REGION || 'eastus'
-  if (!speechKey) {
-    throw new Error('VITE_AZURE_SPEECH_KEY not configured')
+  const base = import.meta.env.VITE_SUPABASE_URL
+  apikey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  if (!base || !apikey) {
+    throw new Error('Supabase not configured — azure-stt proxy unavailable')
   }
+  endpoint = `${base}/functions/v1/azure-stt`
+}
+
+function toneFromText(text, targetBase) {
+  const chars = [...text]
+  if (targetBase) {
+    for (const char of chars) {
+      const entry = CHAR_TONE_MAP[char]
+      if (entry && entry.base === targetBase && entry.tone !== 5) {
+        console.log(`[Azure] Matched base "${targetBase}": "${char}" → T${entry.tone}`)
+        return entry.tone
+      }
+    }
+  }
+  for (const char of chars) {
+    const entry = CHAR_TONE_MAP[char]
+    if (entry && entry.tone !== 5) {
+      console.log(`[Azure] Fallback match: "${char}" → T${entry.tone}`)
+      return entry.tone
+    }
+  }
+  console.log(`[Azure] No mapped character found in text: "${text}"`)
+  return null
+}
+
+async function recognizeOnce(wavBlob) {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'apikey': apikey, 'Authorization': `Bearer ${apikey}`, 'Content-Type': 'audio/wav' },
+    body: wavBlob,
+  })
+  if (!response.ok) {
+    console.warn(`[Azure] proxy HTTP ${response.status}`)
+    return null
+  }
+  const data = await response.json()
+  return data?.text?.trim() || null
 }
 
 /**
- * Detect tone via Azure Pronunciation Assessment.
- * Returns the tone the speaker actually produced (1-4), not just
- * whether they matched the target.
- *
- * @param {Float32Array} samples - raw audio
+ * Detect tone via Azure recognition (through the azure-stt proxy).
+ * @param {Float32Array} samples
  * @param {number} sampleRate
  * @param {string|null} targetBase - base syllable (e.g. 'ma')
- * @param {string|null} referenceChar - the character the user should say (e.g. '妈')
  * @returns {Promise<number|null>} tone 1-4
  */
-export async function detectToneWithAzure(samples, sampleRate, targetBase = null, referenceChar = null) {
-  if (!speechKey) throw new Error('Azure Speech not loaded')
+export async function detectToneWithAzure(samples, sampleRate, targetBase = null) {
+  if (!endpoint) throw new Error('Azure proxy not loaded')
 
-  // Resample to 16kHz if needed
   const audio16k = sampleRate === 16000 ? samples : resampleTo16k(samples, sampleRate)
+  const wavBlob = encodeWAV(audio16k, 16000)
 
-  // Convert Float32 to Int16 PCM
-  const int16 = new Int16Array(audio16k.length)
-  for (let i = 0; i < audio16k.length; i++) {
-    const s = Math.max(-1, Math.min(1, audio16k[i]))
-    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+  try {
+    // Azure sometimes returns empty on valid audio — one retry, like before.
+    let text = await recognizeOnce(wavBlob)
+    if (!text) {
+      console.log('[Azure] Retrying recognition...')
+      text = await recognizeOnce(wavBlob)
+    }
+    if (!text) return null
+    console.log(`[Azure] Recognized text: "${text}"`)
+    return toneFromText(text, targetBase)
+  } catch (e) {
+    console.warn('[Azure] Request failed:', e.message)
+    return null
   }
-
-  // Create push stream with 16kHz mono 16-bit format
-  const format = sdk.AudioStreamFormat.getWaveFormatPCM(16000, 16, 1)
-  const pushStream = sdk.AudioInputStream.createPushStream(format)
-  pushStream.write(int16.buffer)
-  pushStream.close()
-
-  const audioConfig = sdk.AudioConfig.fromStreamInput(pushStream)
-  const speechConfig = sdk.SpeechConfig.fromSubscription(speechKey, speechRegion)
-  speechConfig.speechRecognitionLanguage = 'zh-CN'
-
-  const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig)
-  // Pronunciation Assessment disabled because it forces alignment to referenceChar
-  // which biases the model to always return the target tone even when user says it wrong.
-
-  const attemptRecognition = () => new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      recognizer.close()
-      resolve(null)
-    }, 10000)
-
-    recognizer.recognizeOnceAsync(
-      (result) => {
-        clearTimeout(timeout)
-        try {
-          if (result.reason !== sdk.ResultReason.RecognizedSpeech) {
-            console.warn(`[Azure] Recognition failed: ${sdk.ResultReason[result.reason]}`)
-            recognizer.close()
-            resolve(null)
-            return
-          }
-
-          const text = result.text?.trim()
-          if (!text) {
-            recognizer.close()
-            resolve(null)
-            return
-          }
-
-          console.log(`[Azure] Recognized text: "${text}"`)
-          const chars = [...text]
-
-          // First try to match the base syllable
-          if (targetBase) {
-            for (const char of chars) {
-              const entry = CHAR_TONE_MAP[char]
-              if (entry && entry.base === targetBase && entry.tone !== 5) {
-                console.log(`[Azure] Matched base "${targetBase}": "${char}" → T${entry.tone}`)
-                recognizer.close()
-                resolve(entry.tone)
-                return
-              }
-            }
-          }
-
-          // Fallback to any recognized character with a valid tone
-          for (const char of chars) {
-            const entry = CHAR_TONE_MAP[char]
-            if (entry && entry.tone !== 5) {
-              console.log(`[Azure] Fallback match: "${char}" → T${entry.tone}`)
-              recognizer.close()
-              resolve(entry.tone)
-              return
-            }
-          }
-
-          console.log(`[Azure] No mapped character found in text: "${text}"`)
-          recognizer.close()
-          resolve(null)
-        } catch (e) {
-          console.warn('[Azure] Parse error:', e.message)
-          recognizer.close()
-          resolve(null)
-        }
-      },
-      (error) => {
-        clearTimeout(timeout)
-        console.warn('[Azure] Recognition error:', error)
-        recognizer.close()
-        resolve(null)
-      }
-    )
-  })
-
-  // Try up to 2 times — Azure sometimes returns null on valid audio
-  let result = await attemptRecognition()
-  if (result !== null) return result
-
-  // Retry with fresh recognizer
-  console.log('[Azure] Retrying recognition...')
-  const pushStream2 = sdk.AudioInputStream.createPushStream(format)
-  pushStream2.write(int16.buffer)
-  pushStream2.close()
-  const audioConfig2 = sdk.AudioConfig.fromStreamInput(pushStream2)
-  const recognizer2 = new sdk.SpeechRecognizer(speechConfig, audioConfig2)
-
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => { recognizer2.close(); resolve(null) }, 10000)
-    recognizer2.recognizeOnceAsync(
-      (result) => {
-        clearTimeout(timeout)
-        try {
-          if (result.reason !== sdk.ResultReason.RecognizedSpeech) {
-            recognizer2.close(); resolve(null); return
-          }
-          const text = result.text?.trim()
-          if (!text) { recognizer2.close(); resolve(null); return }
-          console.log(`[Azure] Retry recognized: "${text}"`)
-          const chars = [...text]
-          if (targetBase) {
-            for (const char of chars) {
-              const entry = CHAR_TONE_MAP[char]
-              if (entry && entry.base === targetBase && entry.tone !== 5) {
-                recognizer2.close(); resolve(entry.tone); return
-              }
-            }
-          }
-          for (const char of chars) {
-            const entry = CHAR_TONE_MAP[char]
-            if (entry && entry.tone !== 5) { recognizer2.close(); resolve(entry.tone); return }
-          }
-          recognizer2.close(); resolve(null)
-        } catch (e) { recognizer2.close(); resolve(null) }
-      },
-      () => { clearTimeout(timeout); recognizer2.close(); resolve(null) }
-    )
-  })
-}
-
-// ── Resample to 16kHz ──
-function resampleTo16k(samples, fromRate) {
-  const ratio = fromRate / 16000
-  const out = new Float32Array(Math.floor(samples.length / ratio))
-  for (let i = 0; i < out.length; i++) {
-    const src = i * ratio
-    const lo = Math.floor(src), hi = Math.min(lo + 1, samples.length - 1)
-    out[i] = samples[lo] * (1 - (src - lo)) + samples[hi] * (src - lo)
-  }
-  return out
 }
