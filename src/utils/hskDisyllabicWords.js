@@ -2,6 +2,39 @@
 // Top HSK 1–3 disyllabic Chinese words for Test Y.
 // Generated from "Test B D Y HSK_disyllabic_words_sorted.xlsx".
 
+// ── Lookup: bare syllables + tone pattern → the hanzi word ──
+// Practice II's hybrid judge needs the expected characters to compare with
+// Azure's recognition. Built lazily from this file's pinyin field.
+const TONE_MARKS = {
+  'ā': 'a1', 'á': 'a2', 'ǎ': 'a3', 'à': 'a4', 'ē': 'e1', 'é': 'e2', 'ě': 'e3', 'è': 'e4',
+  'ī': 'i1', 'í': 'i2', 'ǐ': 'i3', 'ì': 'i4', 'ō': 'o1', 'ó': 'o2', 'ǒ': 'o3', 'ò': 'o4',
+  'ū': 'u1', 'ú': 'u2', 'ǔ': 'u3', 'ù': 'u4', 'ǖ': 'v1', 'ǘ': 'v2', 'ǚ': 'v3', 'ǜ': 'v4', 'ü': 'v',
+}
+let _hskIndex = null
+function hskIndex() {
+  if (_hskIndex) return _hskIndex
+  _hskIndex = new Map()
+  for (const w of HSK_DISYLLABIC_WORDS) {
+    let bare = ''
+    for (const ch of w.pinyin.normalize('NFC').toLowerCase()) {
+      if (TONE_MARKS[ch]) bare += TONE_MARKS[ch][0]
+      else if (/[a-z]/.test(ch)) bare += ch
+    }
+    _hskIndex.set(`${bare}|${w.pattern}`, w)
+  }
+  return _hskIndex
+}
+/** Find the HSK word for bare syllables + tones, or null. */
+export function findHskWord(syl1, t1, syl2, t2) {
+  return hskIndex().get(`${syl1}${syl2}|${t1}${t2}`) || null
+}
+/** All HSK words with the same bare syllables (any tone pattern). */
+export function findHskHomographs(syl1, syl2) {
+  const out = []
+  for (const [k, w] of hskIndex()) if (k.startsWith(`${syl1}${syl2}|`)) out.push(w)
+  return out
+}
+
 export const HSK_DISYLLABIC_WORDS = [
   {
     "chars": "爱好",

@@ -61,6 +61,28 @@ async function recognizeOnce(wavBlob) {
 }
 
 /**
+ * Raw zh-CN recognition through the proxy (hanzi text or null).
+ * Used by Test 3 tone detection AND Practice II hybrid judging.
+ */
+export async function recognizeMandarin(samples, sampleRate) {
+  if (!endpoint) await loadAzure()
+  const audio16k = sampleRate === 16000 ? samples : resampleTo16k(samples, sampleRate)
+  const wavBlob = encodeWAV(audio16k, 16000)
+  try {
+    let text = await recognizeOnce(wavBlob)
+    if (!text) {
+      console.log('[Azure] Retrying recognition...')
+      text = await recognizeOnce(wavBlob)
+    }
+    if (text) console.log(`[Azure] Recognized text: "${text}"`)
+    return text
+  } catch (e) {
+    console.warn('[Azure] Request failed:', e.message)
+    return null
+  }
+}
+
+/**
  * Detect tone via Azure recognition (through the azure-stt proxy).
  * @param {Float32Array} samples
  * @param {number} sampleRate
@@ -69,22 +91,7 @@ async function recognizeOnce(wavBlob) {
  */
 export async function detectToneWithAzure(samples, sampleRate, targetBase = null) {
   if (!endpoint) throw new Error('Azure proxy not loaded')
-
-  const audio16k = sampleRate === 16000 ? samples : resampleTo16k(samples, sampleRate)
-  const wavBlob = encodeWAV(audio16k, 16000)
-
-  try {
-    // Azure sometimes returns empty on valid audio — one retry, like before.
-    let text = await recognizeOnce(wavBlob)
-    if (!text) {
-      console.log('[Azure] Retrying recognition...')
-      text = await recognizeOnce(wavBlob)
-    }
-    if (!text) return null
-    console.log(`[Azure] Recognized text: "${text}"`)
-    return toneFromText(text, targetBase)
-  } catch (e) {
-    console.warn('[Azure] Request failed:', e.message)
-    return null
-  }
+  const text = await recognizeMandarin(samples, sampleRate)
+  if (!text) return null
+  return toneFromText(text, targetBase)
 }

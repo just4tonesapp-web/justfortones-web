@@ -12,6 +12,9 @@ import { applyTone, shuffle } from '../utils/pinyin.js'
 import { playSyllable, playDisyllable, playPcm, stopAllAudio } from '../utils/audio.js'
 import { AudioEngine } from '../utils/audioEngine.js'
 import { detectToneWithPitch, detectTonePairWithPitch, normalizePeak } from '../utils/models/pitchModel.js'
+import { recognizeMandarin } from '../utils/models/azureModel.js'
+import { CHAR_TONE_MAP } from '../utils/models/whisperModel.js'
+import { findHskWord, findHskHomographs } from '../utils/hskDisyllabicWords.js'
 import { DISYLLABLE_BY_PAIR } from '../utils/disyllableManifest.js'
 import { saveResult } from '../services/progressService.js'
 
@@ -99,27 +102,63 @@ export function practiceType2View(container) {
     }, 100)
   }
 
-  function stopRec(item) {
+  async function stopRec(item) {
     if (!isRecording) return
     clearTimeout(recTimer)
     clearInterval(autoStopTimer)
     lastRec = engine.stop()
     isRecording = false
+    phase = 'judging'; render()
+
+    // ── Hybrid judge (team decision 2026-09-04): Azure recognition first
+    // (94% on calibration, via our server-side proxy — free tier covers
+    // thousands of takes/month), on-device pitch as fallback/offline path.
+    let azureText = null
+    try { azureText = await recognizeMandarin(lastRec.samples, lastRec.sampleRate) } catch { /* offline → pitch */ }
 
     if (item.type === 'single') {
-      const tone = detectToneWithPitch(lastRec.samples, lastRec.sampleRate)
-      if (tone === null) {
-        feedback = { good: false, text: 'We couldn\'t hear that clearly — try again a little closer to the mic.' }
-      } else {
-        const ok = tone === item.tone
-        feedback = { good: ok, text: ok ? pick(PRAISE) : pick(NUDGE) }
+      let verdict = null // true/false/null(unknown)
+      if (azureText) {
+        for (const ch of [...azureText]) {
+          if (ch === item.char) { verdict = true; break }
+          const e = CHAR_TONE_MAP[ch]
+          if (e && e.base === item.base && e.tone !== 5) { verdict = e.tone === item.tone; break }
+        }
       }
+      if (verdict === null) {
+        const tone = detectToneWithPitch(lastRec.samples, lastRec.sampleRate)
+        verdict = tone === null ? null : tone === item.tone
+      }
+      feedback = verdict === null
+        ? { good: false, text: 'We couldn\'t hear that clearly — try again a little closer to the mic.' }
+        : { good: verdict, text: verdict ? pick(PRAISE) : pick(NUDGE) }
     } else {
-      // Disyllable: split at the energy valley, judge both halves on a SHARED
-      // pitch scale (independent scales erased the register contrast and
-      // misjudged correct takes — found via a learner's real 球场 recording).
+      // Disyllable: Azure first — compare the recognized hanzi with the
+      // expected HSK word (and its same-syllable different-tone homographs).
+      const expected = findHskWord(item.syl1, item.t1, item.syl2, item.t2)
+      let azureVerdict = null // { ok1, ok2 } or null (unknown → fall back)
+      if (azureText && expected) {
+        if (azureText.includes(expected.chars)) {
+          azureVerdict = { ok1: true, ok2: true }
+        } else {
+          const other = findHskHomographs(item.syl1, item.syl2)
+            .find(w => w.pattern !== expected.pattern && azureText.includes(w.chars))
+          if (other) {
+            // Same syllables, different tones — Azure heard which ones.
+            azureVerdict = { ok1: other.pattern[0] === String(item.t1), ok2: other.pattern[1] === String(item.t2) }
+          }
+        }
+      }
+      // Pitch path (fallback + the sole path when offline/unrecognized).
       const { t1: d1, t2: d2, scores1, scores2 } = detectTonePairWithPitch(lastRec.samples, lastRec.sampleRate)
-      if (d1 === null && d2 === null) {
+      if (azureVerdict) {
+        const { ok1, ok2 } = azureVerdict
+        const p1 = applyTone(item.syl1, item.t1)
+        const p2 = applyTone(item.syl2, item.t2)
+        if (ok1 && ok2) feedback = { good: true, text: `${pick(PRAISE)} Both syllables sounded right — replay yours and the demo to double-check.` }
+        else if (ok1 || ok2) feedback = { good: false, text: `Close! “${ok1 ? p2 : p1}” sounded off — listen to the demo again and watch that syllable.` }
+        else feedback = { good: false, text: `Not quite — listen to the demo and try to match “${p1} ${p2}” one syllable at a time.` }
+      } else if (d1 === null && d2 === null) {
         feedback = { good: false, text: 'We couldn\'t hear that clearly — try again a little closer to the mic.' }
       } else {
         // Practice-mode leniency: exact match, OR the target tone scores within
@@ -174,6 +213,9 @@ export function practiceType2View(container) {
             ${phase === 'recording' ? `
               <button class="p2-mic recording" id="p2-stop"><span class="p2-mic-icon">⏺</span></button>
               <div class="p2-rec-label">Recording… <span class="p2-rec-tap">stops by itself when you finish (or tap ⏺)</span></div>
+            ` : phase === 'judging' ? `
+              <button class="p2-mic" disabled><span class="p2-mic-icon">⏳</span></button>
+              <div class="p2-rec-label">Checking your pronunciation…</div>
             ` : `
               <button class="p2-mic" id="p2-record"><span class="p2-mic-icon">🎤</span></button>
               <div class="p2-rec-label">${lastRec ? 'Tap to record again' : 'Tap and say the word'}</div>
