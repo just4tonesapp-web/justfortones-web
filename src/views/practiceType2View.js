@@ -32,7 +32,7 @@ const PRAISE = ['Perfect! 🎉', 'Beautiful!', 'Good job!', 'Nicely done!']
 const NUDGE  = ['Almost there — listen to the demo again.', 'It\'s close! Give it another go.', 'Try it again — match the demo\'s pitch.']
 const pick = (a) => a[Math.floor(Math.random() * a.length)]
 
-export function practiceType2View(container) {
+export function practiceType2View(container, { debug = false } = {}) {
   const engine = new AudioEngine()
   // Adaptive (feedback-based): lean the word set toward the diagnostic's weakest
   // tone, defaulting to the 3rd if no diagnostic has been taken yet.
@@ -45,6 +45,7 @@ export function practiceType2View(container) {
   let idx = 0, phase = 'ready', lastRec = null, feedback = null, isRecording = false, recTimer = null
   let autoStopTimer = null
   let goodCount = 0 // items whose final take was judged good
+  let lastDiag = null // debug route: what each judge saw for the last take
 
   function buildItems() {
     const list = []
@@ -125,10 +126,12 @@ export function practiceType2View(container) {
           if (e && e.base === item.base && e.tone !== 5) { verdict = e.tone === item.tone; break }
         }
       }
+      let pitchTone = null
       if (verdict === null) {
-        const tone = detectToneWithPitch(lastRec.samples, lastRec.sampleRate)
-        verdict = tone === null ? null : tone === item.tone
+        pitchTone = detectToneWithPitch(lastRec.samples, lastRec.sampleRate)
+        verdict = pitchTone === null ? null : pitchTone === item.tone
       }
+      lastDiag = `azure:"${azureText || '—'}" · target ${item.char}(T${item.tone}) · pitch:${pitchTone !== null ? 'T' + pitchTone : 'n/a'}`
       feedback = verdict === null
         ? { good: false, text: 'We couldn\'t hear that clearly — try again a little closer to the mic.' }
         : { good: verdict, text: verdict ? pick(PRAISE) : pick(NUDGE) }
@@ -151,6 +154,8 @@ export function practiceType2View(container) {
       }
       // Pitch path (fallback + the sole path when offline/unrecognized).
       const { t1: d1, t2: d2, scores1, scores2 } = detectTonePairWithPitch(lastRec.samples, lastRec.sampleRate)
+      const fmtS = (s) => s ? Object.entries(s).filter(([, v]) => v > 0).map(([t, v]) => `T${t}:${v.toFixed(2)}`).join(' ') : '—'
+      lastDiag = `azure:"${azureText || '—'}" · expected ${expected?.chars || '?'}(${item.t1}${item.t2}) · azureVerdict:${azureVerdict ? (azureVerdict.ok1 ? '✓' : '✗') + (azureVerdict.ok2 ? '✓' : '✗') : 'n/a'} · pitch:T${d1}+T${d2} [${fmtS(scores1)} | ${fmtS(scores2)}]`
       if (azureVerdict) {
         const { ok1, ok2 } = azureVerdict
         const p1 = applyTone(item.syl1, item.t1)
@@ -224,6 +229,7 @@ export function practiceType2View(container) {
 
           ${phase === 'done' && feedback ? `
             <div class="p2-feedback ${feedback.good ? 'good' : 'bad'}">${feedback.text}</div>
+            ${debug && lastDiag ? `<div style="font-size:0.7rem;color:var(--text-muted);margin:6px 0 10px;line-height:1.5;word-break:break-all">${lastDiag}</div>` : ''}
             <div class="p2-compare">
               <button class="p2-cmp" id="p2-play-own">▶ Your recording</button>
               <button class="p2-cmp" id="p2-play-demo">🔊 Demo</button>
