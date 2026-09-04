@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  // Match your GitHub repo name – change if different
-  base: '/justfortones-web/',
+  // Vercel serves from the domain root; GitHub Pages from /<repo-name>/.
+  // Vercel sets VERCEL=1 during builds, so both keep working in transition.
+  base: process.env.VERCEL ? '/' : '/justfortones-web/',
   build: {
     outDir: 'dist'
   },
