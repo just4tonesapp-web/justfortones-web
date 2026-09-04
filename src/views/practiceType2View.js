@@ -13,6 +13,8 @@ import { playSyllable, playDisyllable, playPcm, stopAllAudio } from '../utils/au
 import { AudioEngine } from '../utils/audioEngine.js'
 import { detectToneWithPitch, detectTonePairWithPitch, normalizePeak } from '../utils/models/pitchModel.js'
 import { recognizeMandarin } from '../utils/models/azureModel.js'
+import { recognizeWithGoogle } from '../utils/models/googleSpeechModel.js'
+import { recognizeWithDeepgram } from '../utils/models/deepgramModel.js'
 import { CHAR_TONE_MAP } from '../utils/models/whisperModel.js'
 import { findHskWord, findHskHomographs } from '../utils/hskDisyllabicWords.js'
 import { DISYLLABLE_BY_PAIR } from '../utils/disyllableManifest.js'
@@ -114,24 +116,39 @@ export function practiceType2View(container, { debug = false } = {}) {
     // ── Hybrid judge (team decision 2026-09-04): Azure recognition first
     // (94% on calibration, via our server-side proxy — free tier covers
     // thousands of takes/month), on-device pitch as fallback/offline path.
-    let azureText = null
-    try { azureText = await recognizeMandarin(lastRec.samples, lastRec.sampleRate) } catch { /* offline → pitch */ }
+    // Debug route additionally asks Google/Deepgram what THEY heard.
+    let azureText = null, googleText = null, deepgramText = null
+    try {
+      const jobs = [recognizeMandarin(lastRec.samples, lastRec.sampleRate).catch(() => null)]
+      if (debug) {
+        jobs.push(recognizeWithGoogle(lastRec.samples, lastRec.sampleRate).catch(() => null))
+        jobs.push(recognizeWithDeepgram(lastRec.samples, lastRec.sampleRate).catch(() => null))
+      }
+      ;[azureText, googleText, deepgramText] = await Promise.all(jobs)
+    } catch { /* offline → pitch */ }
 
     if (item.type === 'single') {
-      let verdict = null // true/false/null(unknown)
-      if (azureText) {
-        for (const ch of [...azureText]) {
-          if (ch === item.char) { verdict = true; break }
+      const judgeText = (text) => {
+        if (!text) return null
+        for (const ch of [...text]) {
+          if (ch === item.char) return true
           const e = CHAR_TONE_MAP[ch]
-          if (e && e.base === item.base && e.tone !== 5) { verdict = e.tone === item.tone; break }
+          if (e && e.base === item.base && e.tone !== 5) return e.tone === item.tone
         }
+        return null
       }
-      let pitchTone = null
-      if (verdict === null) {
-        pitchTone = detectToneWithPitch(lastRec.samples, lastRec.sampleRate)
-        verdict = pitchTone === null ? null : pitchTone === item.tone
+      let verdict = judgeText(azureText)
+      const pitchTone = detectToneWithPitch(lastRec.samples, lastRec.sampleRate)
+      if (verdict === null) verdict = pitchTone === null ? null : pitchTone === item.tone
+      lastDiag = {
+        label: `target ${item.char} (${applyTone(item.base, item.tone)})`,
+        judges: [
+          { icon: '🎯', name: 'Azure', heard: azureText, v: judgeText(azureText) },
+          { icon: '🔍', name: 'Google', heard: googleText, v: judgeText(googleText) },
+          { icon: '🔊', name: 'Deepgram', heard: deepgramText, v: judgeText(deepgramText) },
+          { icon: '🎵', name: 'Pitch', heard: pitchTone !== null ? `T${pitchTone}` : null, v: pitchTone === null ? null : pitchTone === item.tone },
+        ],
       }
-      lastDiag = `azure:"${azureText || '—'}" · target ${item.char}(T${item.tone}) · pitch:${pitchTone !== null ? 'T' + pitchTone : 'n/a'}`
       feedback = verdict === null
         ? { good: false, text: 'We couldn\'t hear that clearly — try again a little closer to the mic.' }
         : { good: verdict, text: verdict ? pick(PRAISE) : pick(NUDGE) }
@@ -139,23 +156,26 @@ export function practiceType2View(container, { debug = false } = {}) {
       // Disyllable: Azure first — compare the recognized hanzi with the
       // expected HSK word (and its same-syllable different-tone homographs).
       const expected = findHskWord(item.syl1, item.t1, item.syl2, item.t2)
-      let azureVerdict = null // { ok1, ok2 } or null (unknown → fall back)
-      if (azureText && expected) {
-        if (azureText.includes(expected.chars)) {
-          azureVerdict = { ok1: true, ok2: true }
-        } else {
-          const other = findHskHomographs(item.syl1, item.syl2)
-            .find(w => w.pattern !== expected.pattern && azureText.includes(w.chars))
-          if (other) {
-            // Same syllables, different tones — Azure heard which ones.
-            azureVerdict = { ok1: other.pattern[0] === String(item.t1), ok2: other.pattern[1] === String(item.t2) }
-          }
-        }
+      const judgeText = (text) => {
+        if (!text || !expected) return null
+        if (text.includes(expected.chars)) return { ok1: true, ok2: true }
+        const other = findHskHomographs(item.syl1, item.syl2)
+          .find(w => w.pattern !== expected.pattern && text.includes(w.chars))
+        if (other) return { ok1: other.pattern[0] === String(item.t1), ok2: other.pattern[1] === String(item.t2) }
+        return null
       }
+      const azureVerdict = judgeText(azureText)
       // Pitch path (fallback + the sole path when offline/unrecognized).
       const { t1: d1, t2: d2, scores1, scores2 } = detectTonePairWithPitch(lastRec.samples, lastRec.sampleRate)
-      const fmtS = (s) => s ? Object.entries(s).filter(([, v]) => v > 0).map(([t, v]) => `T${t}:${v.toFixed(2)}`).join(' ') : '—'
-      lastDiag = `azure:"${azureText || '—'}" · expected ${expected?.chars || '?'}(${item.t1}${item.t2}) · azureVerdict:${azureVerdict ? (azureVerdict.ok1 ? '✓' : '✗') + (azureVerdict.ok2 ? '✓' : '✗') : 'n/a'} · pitch:T${d1}+T${d2} [${fmtS(scores1)} | ${fmtS(scores2)}]`
+      lastDiag = {
+        label: `expected ${expected?.chars || '?'} (${applyTone(item.syl1, item.t1)} ${applyTone(item.syl2, item.t2)})`,
+        judges: [
+          { icon: '🎯', name: 'Azure', heard: azureText, v: azureVerdict },
+          { icon: '🔍', name: 'Google', heard: googleText, v: judgeText(googleText) },
+          { icon: '🔊', name: 'Deepgram', heard: deepgramText, v: judgeText(deepgramText) },
+          { icon: '🎵', name: 'Pitch', heard: d1 || d2 ? `T${d1}+T${d2}` : null, v: d1 === null && d2 === null ? null : { ok1: d1 === item.t1, ok2: d2 === item.t2 } },
+        ],
+      }
       if (azureVerdict) {
         const { ok1, ok2 } = azureVerdict
         const p1 = applyTone(item.syl1, item.t1)
@@ -229,7 +249,18 @@ export function practiceType2View(container, { debug = false } = {}) {
 
           ${phase === 'done' && feedback ? `
             <div class="p2-feedback ${feedback.good ? 'good' : 'bad'}">${feedback.text}</div>
-            ${debug && lastDiag ? `<div style="font-size:0.7rem;color:var(--text-muted);margin:6px 0 10px;line-height:1.5;word-break:break-all">${lastDiag}</div>` : ''}
+            ${debug && lastDiag ? `
+              <div class="p2-judges-label">What the judges heard · ${lastDiag.label}</div>
+              <div class="p2-judges">${lastDiag.judges.map(j => {
+                const ok = j.v === null ? null : typeof j.v === 'object' ? (j.v.ok1 && j.v.ok2) : j.v
+                const verdict = j.v === null ? '—' : typeof j.v === 'object' ? `${j.v.ok1 ? '✓' : '✗'}${j.v.ok2 ? '✓' : '✗'}` : (j.v ? '✓' : '✗')
+                return `<div class="p2-judge ${ok === null ? 'idle' : ok ? 'good' : 'bad'}">
+                  <div class="p2-judge-icon">${j.icon}</div>
+                  <div class="p2-judge-name">${j.name}</div>
+                  <div class="p2-judge-heard">${j.heard || 'No vote'}</div>
+                  <div class="p2-judge-verdict">${verdict}</div>
+                </div>`
+              }).join('')}</div>` : ''}
             <div class="p2-compare">
               <button class="p2-cmp" id="p2-play-own">▶ Your recording</button>
               <button class="p2-cmp" id="p2-play-demo">🔊 Demo</button>
@@ -320,6 +351,16 @@ const scopedCSS = `
   .p2-rec-tap { color: var(--text-muted); }
 
   .p2-feedback { margin: 18px 0 12px; padding: 12px 16px; border-radius: var(--radius-sm); font-size: 0.95rem; font-weight: 600; }
+  .p2-judges-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin: 4px 0 8px; }
+  .p2-judges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+  .p2-judge { border: 1.5px solid var(--card-border); border-radius: var(--radius-sm); padding: 8px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .p2-judge.good { border-color: var(--correct); }
+  .p2-judge.bad { border-color: var(--incorrect); }
+  .p2-judge.idle { opacity: 0.5; }
+  .p2-judge-icon { font-size: 1.2rem; }
+  .p2-judge-name { font-size: 0.68rem; color: var(--text-secondary); font-weight: 600; }
+  .p2-judge-heard { font-size: 0.85rem; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .p2-judge-verdict { font-size: 0.8rem; }
   .p2-feedback.good { background: var(--correct-bg); color: var(--correct); }
   .p2-feedback.bad { background: var(--incorrect-bg); color: var(--incorrect); }
   .p2-compare { display: flex; gap: 10px; }

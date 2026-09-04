@@ -30,6 +30,22 @@ export async function loadDeepgram() {
  * @param {string|null} targetBase - base syllable hint
  * @returns {Promise<number|null>} tone 1-4
  */
+/** Raw zh-CN transcription, no keyword biasing (debug/inspection use). */
+export async function recognizeWithDeepgram(samples, sampleRate) {
+  if (!apiKey) { try { await loadDeepgram() } catch { return null } }
+  const audio16k = sampleRate === 16000 ? samples : resampleTo16k(samples, sampleRate)
+  try {
+    const r = await fetch(`${DEEPGRAM_API_URL}?model=nova-2&language=zh-CN`, {
+      method: 'POST',
+      headers: { 'Authorization': `Token ${apiKey}`, 'Content-Type': 'audio/wav' },
+      body: encodeWAV(audio16k, 16000),
+    })
+    if (!r.ok) return null
+    const data = await r.json()
+    return data?.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() || null
+  } catch { return null }
+}
+
 export async function detectToneWithDeepgram(samples, sampleRate, targetBase = null) {
   if (!apiKey) throw new Error('Deepgram not loaded')
 

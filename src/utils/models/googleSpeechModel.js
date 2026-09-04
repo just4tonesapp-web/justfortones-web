@@ -27,6 +27,37 @@ export async function loadGoogleSpeech() {
  * @param {string|null} targetBase
  * @returns {Promise<number|null>} tone 1-4
  */
+/** Raw zh transcription, no hint biasing (debug/inspection use). */
+export async function recognizeWithGoogle(samples, sampleRate) {
+  if (!apiKey) { try { await loadGoogleSpeech() } catch { return null } }
+  const audio16k = sampleRate === 16000 ? samples : resampleTo16k(samples, sampleRate)
+  const pcm = new Int16Array(audio16k.length)
+  for (let i = 0; i < audio16k.length; i++) {
+    const s = Math.max(-1, Math.min(1, audio16k[i]))
+    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+  }
+  const bytes = new Uint8Array(pcm.buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  try {
+    const controller = new AbortController()
+    const to = setTimeout(() => controller.abort(), 8000)
+    const r = await fetch(`${GOOGLE_API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        config: { encoding: 'LINEAR16', sampleRateHertz: 16000, languageCode: 'zh' },
+        audio: { content: btoa(binary) },
+      }),
+      signal: controller.signal,
+    })
+    clearTimeout(to)
+    if (!r.ok) return null
+    const data = await r.json()
+    return data?.results?.[0]?.alternatives?.[0]?.transcript?.trim() || null
+  } catch { return null }
+}
+
 export async function detectToneWithGoogle(samples, sampleRate, targetBase = null) {
   if (!apiKey) throw new Error('Google Speech not loaded')
 
