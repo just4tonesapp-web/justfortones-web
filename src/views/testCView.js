@@ -190,8 +190,8 @@ export function testCView(container, { debug = false } = {}) {
         <p style="color:var(--text-muted);font-size:0.78rem;margin-bottom:8px">
           ⚠️ Allow microphone access when prompted
         </p>
-        <!-- Always visible (the team kept asking "which models are on?") -->
-        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.72rem;margin-bottom:16px">
+        <!-- Internal info: model status shows only on the /test debug route -->
+        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.72rem;margin-bottom:16px;${debug ? '' : 'display:none'}">
           Loading AI models…
         </p>
         <button class="btn btn-primary btn-lg" id="tc-start">START NOW</button>
