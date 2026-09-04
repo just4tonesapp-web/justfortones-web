@@ -83,12 +83,16 @@ export function practiceType2View(container) {
     recTimer = setTimeout(() => stopRec(item), 20000) // safety cap
     // Hybrid stop (survey + team feedback: pure tap-to-stop is fiddly): once
     // speech is heard, 900ms of silence auto-stops; the ⏺ button still works.
-    let spoke = false, quietMs = 0, started = Date.now()
+    // Adaptive thresholds: an absolute 0.012 never went quiet in a noisy room
+    // (AGC-boosted noise floor) and the auto-stop never fired. Speech must
+    // stand clear of the take's own peak; "quiet" is relative to it too.
+    let spoke = false, quietMs = 0, peakRms = 0, started = Date.now()
     autoStopTimer = setInterval(() => {
       if (!isRecording) { clearInterval(autoStopTimer); return }
       const rms = engine.getRMS()
-      if (rms > 0.012) { spoke = true; quietMs = 0 }
-      else if (spoke) {
+      if (rms > peakRms) peakRms = rms
+      if (rms > Math.max(0.015, peakRms * 0.3)) { spoke = true; quietMs = 0 }
+      else if (spoke && rms < Math.max(0.01, peakRms * 0.18)) {
         quietMs += 100
         if (quietMs >= 900 && Date.now() - started > 700) { clearInterval(autoStopTimer); stopRec(item) }
       }

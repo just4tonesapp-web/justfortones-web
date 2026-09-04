@@ -190,7 +190,8 @@ export function testCView(container, { debug = false } = {}) {
         <p style="color:var(--text-muted);font-size:0.78rem;margin-bottom:8px">
           ⚠️ Allow microphone access when prompted
         </p>
-        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.72rem;margin-bottom:16px;${debug ? '' : 'display:none'}">
+        <!-- Always visible (the team kept asking "which models are on?") -->
+        <p id="tc-model-status" style="color:var(--text-muted);font-size:0.72rem;margin-bottom:16px">
           Loading AI models…
         </p>
         <button class="btn btn-primary btn-lg" id="tc-start">START NOW</button>
@@ -430,15 +431,18 @@ export function testCView(container, { debug = false } = {}) {
     // Level meter + hybrid auto-stop: once speech is heard, 900ms of silence
     // ends the take (the survey's top Test-3 complaint was stop-button timing);
     // tapping ⏺ still stops immediately.
-    let spoke = false, quietMs = 0
+    let spoke = false, quietMs = 0, peakRms = 0
     const startedAt = Date.now()
     levelInterval = setInterval(() => {
       const rms = engine.getRMS()
       const pct = Math.min(100, rms * 500)
       $('tc-level-bar').style.width = `${pct}%`
       if (!isRecording) return
-      if (rms > 0.012) { spoke = true; quietMs = 0 }
-      else if (spoke) {
+      if (rms > peakRms) peakRms = rms
+      // Adaptive: speech must stand clear of the take's peak; quiet is
+      // relative too (absolute thresholds never fired in noisy rooms).
+      if (rms > Math.max(0.015, peakRms * 0.3)) { spoke = true; quietMs = 0 }
+      else if (spoke && rms < Math.max(0.01, peakRms * 0.18)) {
         quietMs += 50
         if (quietMs >= 900 && Date.now() - startedAt > 700) stopRecording()
       }

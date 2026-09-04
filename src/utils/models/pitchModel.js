@@ -43,28 +43,81 @@ const TONE_CONTOURS = {
  * @param {number} sampleRate
  * @returns {number|null} detected tone (1-4) or null if insufficient signal
  */
-/** Framewise pitch extraction shared by all detectors. */
+/** Framewise pitch extraction shared by all detectors.
+ *  The silence gate is RELATIVE to the take's own loudest frame: after peak
+ *  normalization an absolute gate lets amplified background noise through,
+ *  which the pitch trackers turn into 70/600Hz garbage (seen on a real noisy
+ *  recording 2026-09-03). */
 function collectPitches(samples, sampleRate) {
   const acf = ACF2PLUS({ sampleRate })
   const yin = YIN({ sampleRate })
   const frameSize = 2048
   const hopSize = Math.floor(frameSize / 2)
-  const pitches = []
+  const frames = []
+  let maxRms = 0
   for (let start = 0; start + frameSize <= samples.length; start += hopSize) {
     const frame = samples.slice(start, start + frameSize)
     let rms = 0
     for (let i = 0; i < frame.length; i++) rms += frame[i] * frame[i]
     rms = Math.sqrt(rms / frame.length)
-    if (rms < 0.008) continue
+    if (rms > maxRms) maxRms = rms
+    frames.push({ frame, rms })
+  }
+  const gate = Math.max(0.008, maxRms * 0.2)
+  const pitches = []
+  for (const { frame, rms } of frames) {
+    if (rms < gate) continue
     let pitch = acf(frame)
     if (!pitch || pitch < 70 || pitch > 600) pitch = yin(frame)
-    if (pitch && pitch >= 70 && pitch <= 600) pitches.push(pitch)
+    // 70/600 are the trackers' clamp values — on real voice they're octave
+    // errors or noise, not data.
+    if (pitch && pitch > 72 && pitch < 580) pitches.push(pitch)
   }
   return pitches
 }
 
+/** Isolate the dominant utterance: a long take (auto-stop misfire, repeated
+ *  attempts, room noise) can contain several sound bursts — keep the most
+ *  energetic contiguous voiced stretch, bridging pauses under 250ms. */
+export function trimToUtterance(samples, sampleRate) {
+  const frame = Math.max(1, Math.floor(sampleRate * 0.03))
+  const rms = []
+  for (let i = 0; i + frame <= samples.length; i += frame) {
+    let s = 0
+    for (let j = i; j < i + frame; j++) s += samples[j] * samples[j]
+    rms.push(Math.sqrt(s / frame))
+  }
+  const maxR = Math.max(...rms, 0)
+  if (maxR === 0) return samples
+  const th = maxR * 0.22
+  const bridge = Math.round(250 / 30) // frames of allowed gap
+  const segs = []
+  let start = -1, quiet = 0
+  for (let i = 0; i < rms.length; i++) {
+    if (rms[i] >= th) {
+      if (start < 0) start = i
+      quiet = 0
+    } else if (start >= 0 && ++quiet > bridge) {
+      segs.push([start, i - quiet])
+      start = -1; quiet = 0
+    }
+  }
+  if (start >= 0) segs.push([start, rms.length - 1])
+  if (!segs.length) return samples
+  let best = segs[0], bestE = -1
+  for (const [a, b] of segs) {
+    let e = 0
+    for (let i = a; i <= b; i++) e += rms[i] * rms[i]
+    if (e > bestE) { bestE = e; best = [a, b] }
+  }
+  const pad = Math.floor(sampleRate * 0.1)
+  const from = Math.max(0, best[0] * frame - pad)
+  const to = Math.min(samples.length, (best[1] + 1) * frame + pad)
+  return samples.slice(from, to)
+}
+
 export function detectToneWithPitch(samples, sampleRate) {
-  samples = normalizePeak(samples)
+  samples = trimToUtterance(normalizePeak(samples), sampleRate)
   const pitches = collectPitches(samples, sampleRate)
 
   if (pitches.length < 4) return null
@@ -119,7 +172,7 @@ export function detectToneWithPitch(samples, sampleRate) {
  * mode leniency (accept the target when it's within a margin of the winner).
  */
 export function detectTonePairWithPitch(samples, sampleRate) {
-  samples = normalizePeak(samples)
+  samples = trimToUtterance(normalizePeak(samples), sampleRate)
   const { first, second } = splitDisyllableAudio(samples, sampleRate)
   const p1 = collectPitches(first, sampleRate)
   const p2 = collectPitches(second, sampleRate)
