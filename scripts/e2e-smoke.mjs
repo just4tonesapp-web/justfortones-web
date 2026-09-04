@@ -94,11 +94,40 @@ async function browserChecks() {
   const evalIn = (fn, ...a) => page.evaluate(fn, ...a)
 
   try {
+    // ── Auth UI: signup pipeline (taken-name error path), login, session,
+    // cloud history, logout — uses the standing test account, creates nothing.
+    await page.goto(`${BASE}?e2e=${Date.now()}#/login`, { waitUntil: 'networkidle2', timeout: 45000 })
+    await sleep(2500) // coi-serviceworker may reload once on first visit
+    await $('#tab-signup'); await page.click('#tab-signup'); await sleep(300)
+    await page.type('#auth-user', 'smoketest.claude')
+    await page.type('#auth-pass', 'whatever-123')
+    await page.click('#auth-submit'); await sleep(2500)
+    const signupMsg = await evalIn(() => document.getElementById('auth-message')?.textContent || '')
+    check('signup form → taken-name error', /taken/i.test(signupMsg), signupMsg.slice(0, 50))
+
+    await page.click('#tab-login'); await sleep(300)
+    await page.type('#auth-user', 'smoketest.claude')
+    await page.type('#auth-pass', 'j4t-smoke-2026')
+    await page.click('#auth-submit'); await sleep(2500)
+    const loggedIn = await evalIn(() => ({
+      user: JSON.parse(localStorage.getItem('j4t_user') || 'null')?.username,
+      bar: document.getElementById('account-bar')?.style.display !== 'none',
+    }))
+    check('login form → session + account bar', loggedIn.user === 'smoketest.claude' && loggedIn.bar, JSON.stringify(loggedIn))
+
+    await evalIn(() => { window.location.hash = '/history' }); await sleep(2500)
+    const cloudHist = await evalIn(() => document.querySelector('.hist-summary')?.textContent?.trim().split('\n')[0] || '')
+    check('cloud history via UI', /attempt/.test(cloudHist), cloudHist)
+
+    await evalIn(() => document.getElementById('acct-logout')?.click()); await sleep(800)
+    const loggedOut = await evalIn(() => !localStorage.getItem('j4t_user') && location.hash.includes('login'))
+    check('logout', loggedOut)
+
     // Enter via a guarded route: the guard stores the redirect, so after
     // "Continue as guest" we land straight on Test 1 (going through the home
     // page would clear the guest flag — that's by design).
-    await page.goto(`${BASE}?e2e=${Date.now()}#/test-1`, { waitUntil: 'networkidle2', timeout: 45000 })
-    await sleep(2500) // coi-serviceworker may reload once on first visit
+    await page.goto(`${BASE}?e2e2=${Date.now()}#/test-1`, { waitUntil: 'networkidle2', timeout: 45000 })
+    await sleep(1500)
     await $('#auth-guest')
     await page.click('#auth-guest')
     await sleep(800)
