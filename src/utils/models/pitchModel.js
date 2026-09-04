@@ -203,6 +203,10 @@ export function detectTonePairWithPitch(samples, sampleRate) {
     return { tone: bestScore > 0.05 ? best : null, scores }
   }
   const j1 = judge(p1), j2 = judge(p2)
+  // Self-diagnosis: lets us debug "this word judged wrong" from the console
+  // of any tester's browser, no instrumentation needed.
+  const fmt = (s) => s ? Object.entries(s).map(([t, v]) => `T${t}:${v.toFixed(2)}`).join(' ') : '-'
+  console.log(`[pair] ${(samples.length / sampleRate).toFixed(2)}s trimmed, halves ${(first.length / sampleRate).toFixed(2)}s/${(second.length / sampleRate).toFixed(2)}s, pitches ${p1.length}/${p2.length} → T${j1.tone}+T${j2.tone} | s1: ${fmt(j1.scores)} | s2: ${fmt(j2.scores)}`)
   return { t1: j1.tone, t2: j2.tone, scores1: j1.scores, scores2: j2.scores }
 }
 

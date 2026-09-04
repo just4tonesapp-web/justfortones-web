@@ -563,7 +563,9 @@ export function testCView(container, { debug = false } = {}) {
         breakdownEl = document.createElement('div')
         breakdownEl.id = 'tc-model-breakdown'
         breakdownEl.style.cssText = 'font-size:0.72rem;color:var(--text-muted);margin-top:4px;letter-spacing:0.03em'
-        $('tc-q-result').insertBefore(breakdownEl, $('tc-next'))
+        // #tc-next sits INSIDE #tc-result-actions — inserting before a
+        // non-child throws and froze the debug page on the spinner.
+        $('tc-q-result').insertBefore(breakdownEl, $('tc-result-actions'))
       }
       breakdownEl.textContent = modelBreakdown || 'pitch only'
     }
