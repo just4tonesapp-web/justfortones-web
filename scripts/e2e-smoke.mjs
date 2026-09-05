@@ -13,7 +13,7 @@
 import puppeteer from 'puppeteer-core'
 import { existsSync } from 'fs'
 
-const BASE = (process.argv[2] || 'https://justfortones-web.vercel.app/').replace(/\/?$/, '/')
+const BASE = (process.argv[2] || 'https://www.just4tones.org/').replace(/\/?$/, '/')
 const SUPABASE = 'https://gwpjbqvguepqzarsisrr.supabase.co'
 const PUBLISHABLE = 'sb_publishable_yjsJriKKvIPDPrHgKYq1wA_pQWYAu1M'
 
