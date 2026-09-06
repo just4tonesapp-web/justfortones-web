@@ -13,6 +13,7 @@ import { playSyllable, playDisyllable, stopAllAudio } from '../utils/audio.js'
 import { hasRecording } from '../utils/recordingsManifest.js'
 import { DISYLLABLE_BY_PAIR } from '../utils/disyllableManifest.js'
 import { saveResult } from '../services/progressService.js'
+import { findHskWord } from '../utils/hskDisyllabicWords.js'
 
 const ORD = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th' }
 const TONE_HINT = { 1: '─ high & flat', 2: '／ rising', 3: '∨ dip', 4: '＼ falling' }
@@ -219,7 +220,11 @@ export function practiceType1View(container) {
       })
       const fb = document.getElementById('p1-feedback')
       fb.className = `p1-feedback ${ok ? 'good' : 'bad'}`
-      fb.textContent = ok ? '✓ Correct!' : `Not quite — it was ${applyTone(q.syl1, q.t1)} ${applyTone(q.syl2, q.t2)}.`
+      // Reveal the hanzi AFTER answering (May 13 note: practice should show
+      // characters — after, so the listening task isn't spoiled by reading).
+      const word = findHskWord(q.syl1, q.t1, q.syl2, q.t2)
+      const hanzi = word ? ` ${word.chars}` : ''
+      fb.textContent = ok ? `✓ Correct!${hanzi} ${applyTone(q.syl1, q.t1)}${applyTone(q.syl2, q.t2)}` : `Not quite — it was${hanzi} ${applyTone(q.syl1, q.t1)}${applyTone(q.syl2, q.t2)}.`
       const next = document.getElementById('p1-next')
       next.classList.remove('hidden')
       next.textContent = idx + 1 >= TOTAL ? 'See results →' : 'Next →'

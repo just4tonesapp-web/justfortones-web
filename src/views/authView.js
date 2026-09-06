@@ -46,7 +46,7 @@ export function authView(container) {
             </button>
           </div>
 
-          <p class="auth-support">Trouble logging in? Contact <a href="mailto:support@fourfones.com">support@fourfones.com</a></p>
+          <p class="auth-support">Trouble logging in? Contact <a href="mailto:support@fourfones.com">support@fourfones.com</a> · <a href="#/privacy">Privacy &amp; Data</a></p>
 
           <div class="auth-divider"><span>or</span></div>
 

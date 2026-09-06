@@ -24,6 +24,9 @@ import { practiceType1View } from './views/practiceType1View.js'
 import { practiceType2View } from './views/practiceType2View.js'
 import { practiceType3View } from './views/practiceType3View.js'
 import { practiceType4View } from './views/practiceType4View.js'
+import { practiceType5View } from './views/practiceType5View.js'
+import { statusView } from './views/statusView.js'
+import { privacyView } from './views/privacyView.js'
 import { historyView } from './views/historyView.js'
 import { attemptReportView } from './views/attemptReportView.js'
 import { testYView } from './views/testYView.js'
@@ -138,6 +141,9 @@ route('/practice-2', guarded(practiceType2View)) // Practice Type II — listen 
 route('/practice-3', guarded(practiceType3View)) // Practice Type III — tone-change rules (pptx slide 27)
 route('/practice-4', guarded(practiceType4View)) // Practice Type IV — polyphones 多音字 (team spec 2026-09-02)
 route('/practice-2-debug', guarded((c) => practiceType2View(c, { debug: true }))) // disyllable judging internals
+route('/practice-5', guarded(practiceType5View)) // Practice Type V — character tones 认字 (fall 2026 heritage cohort)
+route('/status', statusView)   // unlisted team dashboard — live service/model health
+route('/privacy', privacyView) // data practices, unguarded
 route('/practice-recognition', guarded(practiceRecView))
 route('/practice-production', guarded(practiceProView))
 route('/practice-characters', guarded(practiceCharView))

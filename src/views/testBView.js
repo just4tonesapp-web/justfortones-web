@@ -41,7 +41,11 @@ export function testBView(container) {
 
     const pickRecorded = (t1, t2) => {
       const key = `${t1}${t2}`
-      const items = DISYLLABLE_BY_PAIR[key] || []
+      let items = DISYLLABLE_BY_PAIR[key] || []
+      // Jul 8 decision: prefer ADVANCED (HSK 7-9) words when recorded — known
+      // words get answered from memory ("同学 is 2-2"), not by listening.
+      const adv = items.filter(it => it.adv)
+      if (adv.length) items = adv
       const fresh = items.filter(it => !usedFiles.has(`${key}/${it.file}`) && !previousFiles.has(`${key}/${it.file}`))
       const cand = items.filter(it => !usedFiles.has(`${key}/${it.file}`))
       const pool = fresh.length ? fresh : (cand.length ? cand : items)

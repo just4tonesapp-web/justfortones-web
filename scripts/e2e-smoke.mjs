@@ -219,6 +219,27 @@ async function browserChecks() {
     }))
     check('Practice IV full run', p4.done && p4.row, `done=${p4.done} saved=${p4.row}`)
 
+    // Practice 5 — characters 认字 (single-char set, 12 items)
+    await evalIn(() => { window.location.hash = '/practice-5' }); await sleep(700)
+    await $('#p5-mode-single'); await page.click('#p5-mode-single'); await sleep(400)
+    for (let i = 0; i < 12; i++) {
+      await evalIn(() => document.querySelector('.p5-opt')?.click()); await sleep(180)
+      await evalIn(() => document.getElementById('p5-next')?.click()); await sleep(300)
+    }
+    const p5 = await evalIn(() => ({
+      done: !!document.querySelector('.p5-done'),
+      row: JSON.parse(localStorage.getItem('j4t_progress') || '[]').some(r => r.test_type === 'P5'),
+    }))
+    check('Practice V full run', p5.done && p5.row, `done=${p5.done} saved=${p5.row}`)
+
+    // Status dashboard renders with live probes
+    await evalIn(() => { window.location.hash = '/status' }); await sleep(6000)
+    const st = await evalIn(() => ({
+      ok: document.querySelectorAll('.st-dot.ok').length,
+      bad: document.querySelectorAll('.st-dot.bad').length,
+    }))
+    check('status dashboard probes', st.ok >= 5 && st.bad === 0, `ok=${st.ok} bad=${st.bad}`)
+
     // Report + history render
     await evalIn(() => { window.location.hash = '/report' }); await sleep(900)
     const rep = await evalIn(() => document.body.innerText.includes('Composite Report'))

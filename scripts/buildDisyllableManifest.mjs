@@ -2,6 +2,7 @@ import { readdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 
 const ROOT = '/Users/homer/Documents/justfortones-web/public/audio/disyllables'
+const ADV_ROOT = '/Users/homer/Documents/justfortones-web/public/audio/disyllables-adv' // HSK 7-9 (Jul 8 decision)
 const OUT = '/Users/homer/Documents/justfortones-web/src/utils/disyllableManifest.js'
 
 // File pattern: optional leading tone digits, syllable letters, possibly more
@@ -12,24 +13,30 @@ const FN_RE = /^([a-z]+)([1-5])([a-z]+)([1-5])(?:\s*\(\d+\))?\.m4a$/i
 const byPair = {}
 const skipped = []
 
-for (const dir of readdirSync(ROOT).sort()) {
-  if (!/^[1-4]{2}$/.test(dir)) continue
-  const tone1 = +dir[0], tone2 = +dir[1]
-  const files = readdirSync(join(ROOT, dir)).filter(f => f.endsWith('.m4a'))
-  byPair[dir] = []
-  const seenSyls = new Set()
-
-  for (const f of files) {
-    const m = f.match(FN_RE)
-    if (!m) { skipped.push(`${dir}/${f}`); continue }
-    const syl1 = m[1].toLowerCase()
-    const syl2 = m[3].toLowerCase()
-    const key = `${syl1}|${syl2}`
-    if (seenSyls.has(key)) continue   // dedupe (e.g., "(2)" variants)
-    seenSyls.add(key)
-    byPair[dir].push({ syl1, syl2, file: f })
+function scanRoot(root, adv) {
+  let dirs = []
+  try { dirs = readdirSync(root) } catch { return }
+  for (const dir of dirs.sort()) {
+    if (!/^[1-4]{2}$/.test(dir)) continue
+    const files = readdirSync(join(root, dir)).filter(f => f.endsWith('.m4a'))
+    byPair[dir] ||= []
+    const seenSyls = new Set(byPair[dir].map(it => `${it.syl1}|${it.syl2}`))
+    for (const f of files) {
+      const m = f.match(FN_RE)
+      if (!m) { skipped.push(`${dir}/${f}`); continue }
+      const syl1 = m[1].toLowerCase()
+      const syl2 = m[3].toLowerCase()
+      const key = `${syl1}|${syl2}`
+      if (seenSyls.has(key)) continue   // dedupe (e.g., "(2)" variants)
+      seenSyls.add(key)
+      const entry = { syl1, syl2, file: f }
+      if (adv) entry.adv = true
+      byPair[dir].push(entry)
+    }
   }
 }
+scanRoot(ROOT, false)
+scanRoot(ADV_ROOT, true)   // HSK 7-9 recordings — Test 2 prefers these
 
 const allCombos = []
 for (const [pair, items] of Object.entries(byPair)) {
@@ -51,7 +58,7 @@ export function findDisyllableRecording(syl1, tone1, syl2, tone2) {
   if (!items) return null
   const hit = items.find(it => it.syl1 === syl1 && it.syl2 === syl2)
   if (!hit) return null
-  return \`audio/disyllables/\${pair}/\${hit.file}\`
+  return \`audio/\${hit.adv ? 'disyllables-adv' : 'disyllables'}/\${pair}/\${hit.file}\`
 }
 
 export function hasDisyllableRecording(syl1, tone1, syl2, tone2) {

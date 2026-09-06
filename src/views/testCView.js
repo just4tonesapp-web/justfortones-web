@@ -115,6 +115,7 @@ export function testCView(container, { debug = false } = {}) {
   let isRecording = false
   let recordTimer = null
   let levelInterval = null
+  let qRetries = 0 // per-question retries (max 1 — meeting decision Jul 29)
 
   // Start loading models in the background immediately
   toneDetector.init((model, status, pct) => {
@@ -380,6 +381,7 @@ export function testCView(container, { debug = false } = {}) {
 
   function loadQ() {
     isRecording = false
+    qRetries = 0
     const q = questions[currentQ]
 
     $('tc-prog-label').textContent = `Question ${currentQ + 1} of ${TOTAL}`
@@ -602,8 +604,9 @@ export function testCView(container, { debug = false } = {}) {
       pendingLogEntry = null
     }
 
-    // Show appropriate action buttons
-    if (passed) {
+    // Retry allowed at most ONCE per question (Jul 29 decision + survey:
+    // unlimited retries let people grind to 8/8 and skew the report).
+    if (passed || qRetries >= 1) {
       $('tc-retry-q').classList.add('hidden')
     } else {
       $('tc-retry-q').classList.remove('hidden')
@@ -616,6 +619,7 @@ export function testCView(container, { debug = false } = {}) {
   }
 
   function retryQuestion() {
+    qRetries++
     // Reset UI for retry without advancing question
     $('tc-q-result').classList.add('hidden')
     $('tc-contour-wrap').classList.add('hidden')

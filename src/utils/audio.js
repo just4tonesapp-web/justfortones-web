@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════
 import { hasRecording } from './recordingsManifest.js'
 import { findDisyllableRecording } from './disyllableManifest.js'
+import { SYLLABLE_VARIANTS } from './syllableVariants.js'
 
 let audioCtx = null
 
@@ -206,7 +207,11 @@ export function playSyllable(syllable, tone, onEnd) {
     setTimeout(() => onEnd?.(), d * 1000 + 100)
     return
   }
-  const url = `${import.meta.env.BASE_URL}audio/syllables/${syllable}${tone}.m4a`
+  // Multi-voice: pick randomly among the default take and any extra voices
+  // (files like ma1.b.m4a — see scripts/buildSyllableVariants.mjs).
+  const key = `${syllable}${tone}`
+  const takes = [`${key}.m4a`, ...(SYLLABLE_VARIANTS[key] || [])]
+  const url = `${import.meta.env.BASE_URL}audio/syllables/${takes[Math.floor(Math.random() * takes.length)]}`
   const audio = new Audio(url)
   trackAudio(audio)
   let done = false
