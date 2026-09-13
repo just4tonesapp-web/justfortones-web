@@ -38,7 +38,7 @@ const PATTERNS = []
 for (let a = 1; a <= 4; a++) for (let b = 1; b <= 4; b++) PATTERNS.push([a, b])
 
 export function practiceType5View(container) {
-  let mode = null, items = [], idx = 0, score = 0, answered = false
+  let mode = null, items = [], idx = 0, score = 0, answered = false, answers = []
   const completed = { single: false, word: false }
 
   renderChooser()
@@ -58,7 +58,7 @@ export function practiceType5View(container) {
   function start(m) {
     mode = m
     items = buildItems(m)
-    idx = 0; score = 0; answered = false
+    idx = 0; score = 0; answered = false; answers = []
     render()
   }
 
@@ -138,6 +138,9 @@ export function practiceType5View(container) {
       const i = +el.dataset.i
       const ok = options[i].ok
       if (ok) score++
+      answers.push(isWord
+        ? { chars: q.chars, tones: [q.t1, q.t2], correct: ok }
+        : { char: q.char, tone: q.tone, correct: ok })
       optEls.forEach(o => {
         const j = +o.dataset.i
         o.classList.add('revealed')
@@ -189,7 +192,10 @@ export function practiceType5View(container) {
     document.getElementById('p5-other')?.addEventListener('click', () => start(other))
 
     // Persist AFTER the UI is on screen — a save error must never eat the page.
-    saveResult('P5', score, total, { set: mode })
+    // `answers` is in the same { tone, correct } / { tones, correct } shape
+    // analyzeSingleSyllable/analyzeDisyllabic (toneReport.js) already expect,
+    // so the teacher dashboard reuses those with zero new analysis code.
+    saveResult('P5', score, total, { set: mode, answers })
   }
 
   function inject() {

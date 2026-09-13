@@ -57,6 +57,31 @@ async function httpChecks() {
   const analytics = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_analytics`, { method: 'POST', headers: H, body: '{}' })).json()
   check('analytics RPC', typeof analytics.total_users === 'number', `users=${analytics.total_users}`)
 
+  // Teacher dashboard RPC contracts — only runs once smoketest.claude is
+  // manually flagged is_teacher=true; silently skipped otherwise (same as
+  // every other guest-account-inapplicable check in this file).
+  if (login.id && login.is_teacher) {
+    let classes = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_teacher_classes`, { method: 'POST', headers: H, body: JSON.stringify({ p_teacher_id: login.id }) })).json()
+    if (!Array.isArray(classes) || !classes.length) {
+      const created = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_create_class`, { method: 'POST', headers: H, body: JSON.stringify({ p_teacher_id: login.id, p_name: 'E2E Smoke Class' }) })).json()
+      check('create class RPC', !!created.code, JSON.stringify(created))
+      classes = created.code ? [created] : []
+    } else {
+      check('create class RPC', true, 'reused existing smoke class')
+    }
+    const cls = classes[0]
+    if (cls) {
+      let student = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_login`, { method: 'POST', headers: H, body: JSON.stringify({ p_username: 'smoketest.claude.student', p_password: 'j4t-smoke-2026' }) })).json()
+      if (!student.id) {
+        student = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_signup`, { method: 'POST', headers: H, body: JSON.stringify({ p_username: 'smoketest.claude.student', p_password: 'j4t-smoke-2026' }) })).json()
+      }
+      const join = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_join_class`, { method: 'POST', headers: H, body: JSON.stringify({ p_user_id: student.id, p_code: cls.code }) })).json()
+      check('join class RPC', !!join.ok, JSON.stringify(join))
+      const roster = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_teacher_roster`, { method: 'POST', headers: H, body: JSON.stringify({ p_teacher_id: login.id, p_class_id: cls.id }) })).json()
+      check('teacher roster RPC', Array.isArray(roster) && roster.some(s => s.id === student.id), `${Array.isArray(roster) ? roster.length : 0} students`)
+    }
+  }
+
   // azure-stt proxy with a 0.3s beep WAV
   const n = 4800, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf)
   const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)) }

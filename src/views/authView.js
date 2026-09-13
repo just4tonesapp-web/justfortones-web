@@ -118,8 +118,13 @@ export function authView(container) {
         setLoading(false)
         return
       }
-      // Success — store our lightweight session and continue.
-      localStorage.setItem('j4t_user', JSON.stringify({ id: data.id, username: data.username }))
+      // Success — store our lightweight session and continue. is_teacher/class_*
+      // only come back from app_login (signup accounts start as plain students).
+      localStorage.setItem('j4t_user', JSON.stringify({
+        id: data.id, username: data.username,
+        is_teacher: !!data.is_teacher, class_id: data.class_id ?? null,
+        class_name: data.class_name ?? null, class_code: data.class_code ?? null,
+      }))
       sessionStorage.removeItem('j4t_guest')
       window.dispatchEvent(new Event('j4t-auth')) // tell main.js to show the account bar
       const dest = sessionStorage.getItem('j4t_redirect') || '/'

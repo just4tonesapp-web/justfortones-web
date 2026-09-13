@@ -30,6 +30,9 @@ import { privacyView } from './views/privacyView.js'
 import { historyView } from './views/historyView.js'
 import { attemptReportView } from './views/attemptReportView.js'
 import { testYView } from './views/testYView.js'
+import { joinClassView } from './views/joinClassView.js'
+import { teacherDashboardView } from './views/teacherDashboardView.js'
+import { teacherStudentView } from './views/teacherStudentView.js'
 
 // ── Auth state ──
 // Username/password lives in OUR database (Supabase Postgres via pgcrypto RPCs),
@@ -74,10 +77,13 @@ function setupAccountBar() {
     bar.id = 'account-bar'
     bar.className = 'account-bar'
     bar.innerHTML = `
+      <button class="acct-link" id="acct-class" type="button"></button>
       <button class="acct-link" id="acct-history" type="button">${ICON_HISTORY}<span>History</span></button>
       <button class="acct-link" id="acct-logout" type="button">${ICON_LOGOUT}<span>Log out</span></button>
     `
     document.body.appendChild(bar)
+    // Re-read on click (not captured) so a fresh login/logout is always honored.
+    bar.querySelector('#acct-class').addEventListener('click', () => navigate(getUser()?.is_teacher ? '/teacher' : '/join-class'))
     bar.querySelector('#acct-history').addEventListener('click', () => navigate('/history'))
     bar.querySelector('#acct-logout').addEventListener('click', () => {
       localStorage.removeItem('j4t_user')
@@ -86,7 +92,10 @@ function setupAccountBar() {
       navigate('/login')
     })
   }
-  bar.style.display = getUser() ? 'flex' : 'none'
+  const user = getUser()
+  const classBtn = bar.querySelector('#acct-class')
+  if (classBtn) classBtn.innerHTML = user?.is_teacher ? '🎓<span>Teacher Dashboard</span>' : '🏫<span>My Class</span>'
+  bar.style.display = user ? 'flex' : 'none'
   setupGuestPill()
 }
 
@@ -142,6 +151,9 @@ route('/practice-3', guarded(practiceType3View)) // Practice Type III — tone-c
 route('/practice-4', guarded(practiceType4View)) // Practice Type IV — polyphones 多音字 (team spec 2026-09-02)
 route('/practice-2-debug', guarded((c) => practiceType2View(c, { debug: true }))) // disyllable judging internals
 route('/practice-5', guarded(practiceType5View)) // Practice Type V — character tones 认字 (fall 2026 heritage cohort)
+route('/join-class', guarded(joinClassView))     // student self-enrollment via class code
+route('/teacher', guarded(teacherDashboardView)) // teacher dashboard — class code, roster, class-wide weak-tone stats
+route('/teacher-student', guarded(teacherStudentView)) // per-student weak-tone breakdown, opened from the roster
 route('/status', statusView)   // unlisted team dashboard — live service/model health
 route('/privacy', privacyView) // data practices, unguarded
 route('/practice-recognition', guarded(practiceRecView))
