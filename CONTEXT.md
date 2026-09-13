@@ -1,6 +1,16 @@
 # Just4Tones — Dev Context & Progress
 
-Last updated: 2026-05-14
+Last updated: 2026-05-14 — **⚠️ HISTORICAL. Current truth lives in
+`CONTEXT_SESSION_12.md`** (and `CONTEXT_SESSION_11.md` for the Practice/report
+era). Headline changes since this file was written:
+
+- **Live app: https://www.just4tones.org** (Vercel; deploy = `git push origin main`).
+  The github.io URL and `npm run deploy` below are legacy.
+- Accounts migrated 2026-09-02 (GitHub `just4tonesapp-web`, Supabase
+  `gwpjbqvguepqzarsisrr`, schema from `scripts/sql/bootstrap.sql`). Own
+  username/password auth via pgcrypto RPCs — **not** Supabase Auth email flows.
+- Tests are now `/test-1..3` (no Test D); Practices I–V; daily limits;
+  E2E CI (`scripts/e2e-smoke.mjs`); `/status` dashboard; fall pilot 09/08–12/15.
 
 ---
 
