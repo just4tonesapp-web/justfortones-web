@@ -51,10 +51,13 @@ export function analyzeSingleSyllable(answers) {
   for (let t = 1; t <= 4; t++) {
     const qs = answers.filter(a => a.tone === t)
     const correct = qs.filter(a => a.correct).length
-    const total = qs.length || 1
-    const ratio = correct / total
+    // total 0 = this tone was never asked. Do NOT coerce it to 1 — that used to
+    // manufacture a "0/1, 0%, needs work" row and hand the tone the
+    // recommendation. summarize() skips zero-question tones instead.
+    const total = qs.length
+    const ratio = total ? correct / total : 0
     // Three bands: 0, 0.5, 1 (mid-band when ratio is strictly between 0 and 1).
-    const band = ratio >= 1 ? 1 : ratio <= 0 ? 0 : 0.5
+    const band = total === 0 ? 0 : ratio >= 1 ? 1 : ratio <= 0 ? 0 : 0.5
     perTone[t] = { correct, total, ratio, band }
   }
   return summarize(perTone, 'syllable')
@@ -72,8 +75,8 @@ export function analyzeDisyllabic(answers) {
   for (let t = 1; t <= 4; t++) {
     const qs = answers.filter(a => a.tones && (a.tones[0] === t || a.tones[1] === t))
     const correct = qs.filter(a => a.correct).length
-    const total = qs.length || 1
-    const ratio = correct / total
+    const total = qs.length // 0 = no combo containing this tone was asked
+    const ratio = total ? correct / total : 0
     const pct = Math.round(ratio * 100)
     // Three bands: 67–100 / 34–66 / 0–33 per slide 12.
     const band = pct >= 67 ? 1 : pct >= 34 ? 0.5 : 0
@@ -83,11 +86,17 @@ export function analyzeDisyllabic(answers) {
 }
 
 // ── Shared bucketing + recommendation logic ──
-function summarize(perTone, subject) {
+// Exported so the teacher dashboard's pooled analyzer (utils/teacherReport.js)
+// bands many students' answers with percentage thresholds while still producing
+// the identical summary/recommendation shape this file's renderer expects.
+export function summarize(perTone, subject) {
   const bravoTones = []
   const nascentTones = []
   const workTones = []
+  const tested = []
   for (let t = 1; t <= 4; t++) {
+    if (perTone[t].total === 0) continue // never asked — not evidence either way
+    tested.push(t)
     if (perTone[t].band === 1) bravoTones.push(t)
     else if (perTone[t].band === 0.5) nascentTones.push(t)
     else workTones.push(t)
@@ -97,7 +106,7 @@ function summarize(perTone, subject) {
   let pool
   if (workTones.length) pool = workTones
   else if (nascentTones.length) pool = nascentTones
-  else pool = [] // perfect score on this test
+  else pool = [] // nothing below the top band
 
   const recommendedTone = pool.length
     ? NATURAL_ORDER.find(t => pool.includes(t)) || pool[0]
@@ -109,7 +118,9 @@ function summarize(perTone, subject) {
     nascentTones,
     workTones,
     recommendedTone,
-    isPerfect: pool.length === 0,
+    // "All four tones, bravo!" requires all four to have actually been asked —
+    // an empty pool alone is also what partial coverage produces.
+    isPerfect: pool.length === 0 && tested.length === 4,
     subject, // 'syllable' or 'word'
   }
 }
@@ -126,14 +137,15 @@ export function buildReportHTML({ analysis, score, total, testLabel, shape, show
   let rows = ''
   for (let t = 1; t <= 4; t++) {
     const p = analysis.perTone[t]
-    const pct = shape === 'disyl' ? p.pct : Math.round(p.ratio * 100)
-    const numLabel = `${p.correct}/${p.total}`
+    const noData = p.total === 0
+    const pct = noData ? 0 : shape === 'disyl' ? p.pct : Math.round(p.ratio * 100)
+    const numLabel = noData ? 'no data' : `${p.correct}/${p.total}`
     rows += `
       <div class="tr-row">
         <div class="tr-dot"></div>
         <div class="tr-label">${TONE_NAMES[t]}</div>
         <div class="tr-bar"><div class="tr-bar-fill" style="width:${pct}%"></div></div>
-        <div class="tr-pct">${pct}%</div>
+        <div class="tr-pct">${noData ? '—' : `${pct}%`}</div>
         <div class="tr-num">${numLabel}</div>
       </div>`
   }

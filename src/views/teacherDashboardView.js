@@ -24,6 +24,10 @@ export function teacherDashboardView(container) {
 
   let classes = []
   let activeClassId = null
+  // #app is shared by every view (router.js), so a response that lands after the
+  // user has navigated away must not repaint it.
+  const route = location.hash
+  const gone = () => location.hash !== route
 
   renderLoading()
   loadClasses()
@@ -40,12 +44,29 @@ export function teacherDashboardView(container) {
   }
 
   async function loadClasses() {
-    const { data } = await supabase.rpc('app_teacher_classes', { p_teacher_id: user.id })
-    classes = Array.isArray(data) ? data : []
+    const { data, error } = await supabase.rpc('app_teacher_classes', { p_teacher_id: user.id })
+    if (gone()) return
+    if (error || !Array.isArray(data)) { renderLoadError(); return }
+    classes = data
     if (!classes.length) { renderCreateForm(); return }
     if (!classes.find(c => c.id === activeClassId)) activeClassId = classes[0].id
     renderShell()
     loadClassData()
+  }
+
+  function renderLoadError() {
+    container.innerHTML = `
+      <div class="app-shell shell-top-center">
+        <div class="back-row"><button class="app-logo" id="td-home">Just4Tones</button></div>
+        <h1 class="td-title">Teacher Dashboard</h1>
+        <div class="card td-card">
+          <p class="td-message error">Couldn't load your classes.</p>
+          <button class="btn btn-primary btn-lg" id="td-retry">Try again</button>
+        </div>
+      </div>`
+    inject()
+    document.getElementById('td-home').addEventListener('click', () => navigate('/'))
+    document.getElementById('td-retry').addEventListener('click', () => { renderLoading(); loadClasses() })
   }
 
   function renderCreateForm(message) {
@@ -54,6 +75,7 @@ export function teacherDashboardView(container) {
         <div class="back-row"><button class="app-logo" id="td-home">Just4Tones</button></div>
         <h1 class="td-title">Teacher Dashboard</h1>
         <p class="td-sub">Create a class to get a code your students can join with (at /join-class).</p>
+        ${classes.length ? '<button class="btn-link td-cancel" id="td-cancel">← Back to dashboard</button>' : ''}
         <div class="card td-card">
           <div class="field">
             <label for="td-name">Class name</label>
@@ -67,6 +89,7 @@ export function teacherDashboardView(container) {
     document.getElementById('td-home').addEventListener('click', () => navigate('/'))
     document.getElementById('td-create').addEventListener('click', handleCreate)
     document.getElementById('td-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') handleCreate() })
+    document.getElementById('td-cancel')?.addEventListener('click', () => { renderShell(); loadClassData() })
   }
 
   async function handleCreate() {
@@ -77,8 +100,10 @@ export function teacherDashboardView(container) {
     btn.textContent = 'Creating…'
     try {
       const { data, error } = await supabase.rpc('app_create_class', { p_teacher_id: user.id, p_name: name })
+      if (gone()) return
       if (error) throw error
-      if (!data || data.error) { renderCreateForm({ error: true, text: data?.error || 'Something went wrong.' }); return }
+      if (!data || !data.id) { renderCreateForm({ error: true, text: data?.error || 'Something went wrong.' }); return }
+      activeClassId = data.id // land on the class just created, not the previous one
       await loadClasses()
     } catch {
       renderCreateForm({ error: true, text: "Can't reach the server right now." })
@@ -91,10 +116,13 @@ export function teacherDashboardView(container) {
       <div class="app-shell shell-top-center">
         <div class="back-row"><button class="app-logo" id="td-home">Just4Tones</button></div>
         <h1 class="td-title">Teacher Dashboard</h1>
-        ${classes.length > 1 ? `
-          <select id="td-class-select" class="td-select">
-            ${classes.map(c => `<option value="${c.id}" ${c.id === activeClassId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
-          </select>` : ''}
+        <div class="td-class-row">
+          ${classes.length > 1 ? `
+            <select id="td-class-select" class="td-select">
+              ${classes.map(c => `<option value="${c.id}" ${c.id === activeClassId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+            </select>` : ''}
+          <button class="btn-link" id="td-new">+ New class</button>
+        </div>
         <div class="card td-code-card">
           <div class="td-code-row">
             <span class="td-code-label">${escapeHtml(cls.name)}</span>
@@ -112,6 +140,7 @@ export function teacherDashboardView(container) {
     document.getElementById('td-copy').addEventListener('click', () => {
       navigator.clipboard?.writeText(cls.code).catch(() => {})
     })
+    document.getElementById('td-new').addEventListener('click', () => renderCreateForm())
     document.getElementById('td-class-select')?.addEventListener('change', (e) => {
       activeClassId = e.target.value
       renderShell()
@@ -120,13 +149,15 @@ export function teacherDashboardView(container) {
   }
 
   async function loadClassData() {
+    const forClass = activeClassId // the picker can switch classes mid-flight
     const [statsRes, rosterRes, resultsRes] = await Promise.all([
       supabase.rpc('app_teacher_class_stats', { p_teacher_id: user.id, p_class_id: activeClassId }),
       supabase.rpc('app_teacher_roster', { p_teacher_id: user.id, p_class_id: activeClassId }),
       supabase.rpc('app_teacher_class_results', { p_teacher_id: user.id, p_class_id: activeClassId }),
     ])
+    if (gone() || forClass !== activeClassId) return
     renderStats(statsRes.data)
-    renderTones(resultsRes.data)
+    renderTones(resultsRes.error ? null : resultsRes.data)
     renderRoster(rosterRes.data)
   }
 
@@ -134,7 +165,7 @@ export function teacherDashboardView(container) {
     const el = document.getElementById('td-stats')
     if (!el) return
     if (!stats || stats.error) { el.textContent = 'Could not load class stats.'; return }
-    const by = Object.entries(stats.by_type || {}).map(([t, s]) => `${t}×${s.attempts} (${s.avg_score_pct ?? '—'}%)`).join(' · ') || '—'
+    const by = Object.entries(stats.by_type || {}).map(([t, s]) => `${escapeHtml(t)}×${s.attempts} (${s.avg_score_pct ?? '—'}%)`).join(' · ') || '—'
     el.className = 'card td-stats'
     el.innerHTML = `
       <div class="td-section-title">Class stats</div>
@@ -145,12 +176,16 @@ export function teacherDashboardView(container) {
   function renderTones(results) {
     const el = document.getElementById('td-tones')
     if (!el) return
-    if (!Array.isArray(results)) { el.innerHTML = ''; return }
+    if (!Array.isArray(results)) {
+      el.className = ''
+      el.innerHTML = '<p class="card td-empty">Could not load the class tone breakdown.</p>'
+      return
+    }
     const buckets = bucketAnswers(results)
     const keys = Object.keys(ACTIVITY_META).filter(k => buckets[k]?.length)
     if (!keys.length) { el.innerHTML = '<p class="card td-empty">No test/practice data yet for this class.</p>'; return }
     el.className = 'td-tones'
-    el.innerHTML = `<div class="td-section-title">Class weak-tone distribution</div>` + keys.map((k) => {
+    el.innerHTML = `<div class="td-section-title">Class weak-tone distribution · each student's most recent attempt</div>` + keys.map((k) => {
       const answers = buckets[k]
       const analysis = analyzeBucket(k, answers)
       const score = answers.filter(a => a.correct).length
@@ -172,7 +207,7 @@ export function teacherDashboardView(container) {
           <span>Student</span><span>Joined</span><span>Last active</span><span>Attempts</span>
         </div>
         ${roster.map(s => `
-          <button class="td-roster-row" data-id="${s.id}" data-username="${escapeHtml(s.username)}">
+          <button class="td-roster-row" data-username="${escapeHtml(s.username)}">
             <span>${escapeHtml(s.username)}</span>
             <span>${s.class_joined_at ? s.class_joined_at.slice(0, 10) : '—'}</span>
             <span>${s.last_activity ? s.last_activity.slice(0, 10) : 'never'}</span>
@@ -180,7 +215,7 @@ export function teacherDashboardView(container) {
           </button>`).join('')}
       </div>`
     el.querySelectorAll('.td-roster-row').forEach(row => row.addEventListener('click', () => {
-      sessionStorage.setItem('j4t_teacher_student', JSON.stringify({ id: row.dataset.id, username: row.dataset.username }))
+      sessionStorage.setItem('j4t_teacher_student', JSON.stringify({ classId: activeClassId, username: row.dataset.username }))
       navigate('/teacher-student')
     }))
   }
@@ -209,6 +244,10 @@ const scopedCSS = `
   .td-message { font-size: 0.85rem; margin-bottom: 12px; }
   .td-message.error { color: var(--incorrect); }
 
+  .td-class-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .td-class-row .td-select { flex: 1; margin-bottom: 0; }
+  .td-class-row .btn-link { margin-left: auto; white-space: nowrap; }
+  .td-cancel { display: block; margin-bottom: 12px; }
   .td-select { width: 100%; margin-bottom: 14px; padding: 10px 12px; background: var(--surface);
     border: 1px solid var(--card-border); border-radius: var(--radius-sm); color: var(--text-primary);
     font-family: inherit; font-size: 0.9rem; }

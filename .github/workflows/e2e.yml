@@ -21,4 +21,9 @@ jobs:
       - name: Run E2E smoke vs production
         env:
           CHROME_PATH: /usr/bin/google-chrome
+          # Unset -> the teacher-dashboard RPC checks print a WARN and skip.
+          # Point these at a DEDICATED teacher account, never a real one: the run
+          # creates/uses a class named "E2E Smoke Class" under this account.
+          SMOKE_TEACHER_USER: ${{ secrets.SMOKE_TEACHER_USER }}
+          SMOKE_TEACHER_PASS: ${{ secrets.SMOKE_TEACHER_PASS }}
         run: node scripts/e2e-smoke.mjs

@@ -61,7 +61,12 @@ export function joinClassView(container) {
       const { data, error } = await supabase.rpc('app_join_class', { p_user_id: user.id, p_code: code })
       if (error) throw error
       if (!data || data.error) {
-        render({ error: true, text: data?.error === 'invalid code' ? "That code doesn't match a class." : 'Something went wrong.' })
+        const MSG = {
+          'invalid code': "That code doesn't match a class.",
+          'invalid user': 'Your session has expired — please log in again.',
+          'you are the teacher of this class': "That's your own class — open the Teacher Dashboard instead.",
+        }
+        render({ error: true, text: MSG[data?.error] || 'Something went wrong.' })
         return
       }
       setUser({ ...user, class_id: data.class_id, class_name: data.class_name, class_code: data.class_code })

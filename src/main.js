@@ -33,6 +33,7 @@ import { testYView } from './views/testYView.js'
 import { joinClassView } from './views/joinClassView.js'
 import { teacherDashboardView } from './views/teacherDashboardView.js'
 import { teacherStudentView } from './views/teacherStudentView.js'
+import { supabase } from './supabaseClient.js'
 
 // ── Auth state ──
 // Username/password lives in OUR database (Supabase Postgres via pgcrypto RPCs),
@@ -40,6 +41,29 @@ import { teacherStudentView } from './views/teacherStudentView.js'
 // login stores a small session { id, username } in localStorage under j4t_user.
 function getUser() {
   try { return JSON.parse(localStorage.getItem('j4t_user') || 'null') } catch { return null }
+}
+
+// The cached session never expires, and is_teacher / class membership can change
+// in the database without this browser knowing (is_teacher is flipped by hand;
+// a class can be joined on another device). Re-read them once per load so those
+// changes don't require the user to log out and back in. Best-effort: offline or
+// error keeps whatever is cached.
+async function refreshSession() {
+  const u = getUser()
+  if (!u?.id) return
+  try {
+    const { data, error } = await supabase.rpc('app_session', { p_user_id: u.id })
+    if (error || !data || data.error || !data.id) return
+    // Logout or a different login may have happened while this was in flight.
+    const current = getUser()
+    if (!current || current.id !== u.id) return
+    localStorage.setItem('j4t_user', JSON.stringify({
+      id: data.id, username: data.username,
+      is_teacher: !!data.is_teacher, class_id: data.class_id ?? null,
+      class_name: data.class_name ?? null, class_code: data.class_code ?? null,
+    }))
+    setupAccountBar()
+  } catch { /* keep the cached session */ }
 }
 
 /** Check if user is authenticated (logged in or guest) */
@@ -162,8 +186,10 @@ route('/practice-characters', guarded(practiceCharView))
 
 // ── Init ──
 // authView dispatches 'j4t-auth' after login/signup/logout so the account bar
-// re-renders. No async session fetch — the session is purely local.
+// re-renders. Rendering is never blocked on the network: setupAccountBar paints
+// from the cached session immediately and refreshSession corrects it if needed.
 window.addEventListener('j4t-auth', setupAccountBar)
 window.addEventListener('hashchange', setupGuestPill) // guest pill follows route changes
 setupAccountBar()
 startRouter()
+refreshSession()

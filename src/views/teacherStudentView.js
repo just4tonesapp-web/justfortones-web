@@ -23,7 +23,7 @@ export function teacherStudentView(container) {
 
   let student = null
   try { student = JSON.parse(sessionStorage.getItem('j4t_teacher_student') || 'null') } catch { /* ignore */ }
-  if (!student?.id) { navigate('/teacher'); return }
+  if (!student?.username || !student?.classId) { navigate('/teacher'); return }
 
   render()
   load()
@@ -43,19 +43,37 @@ export function teacherStudentView(container) {
   }
 
   async function load() {
-    const { data } = await supabase.rpc('app_teacher_student_results', { p_teacher_id: user.id, p_student_id: student.id })
-    const results = Array.isArray(data) ? data : []
-    renderTones(results)
-    renderHistory(results)
+    const { data, error } = await supabase.rpc('app_teacher_student_results', {
+      p_teacher_id: user.id, p_class_id: student.classId, p_username: student.username,
+    })
+    if (error || !Array.isArray(data)) { renderError(); return }
+    renderTones(data)
+    renderHistory(data)
+  }
+
+  function renderError() {
+    const el = document.getElementById('ts-tones')
+    if (!el) return
+    el.className = ''
+    el.innerHTML = `
+      <div class="card ts-empty">
+        <p>Couldn't load this student's results.</p>
+        <button class="btn-link" id="ts-retry">Try again</button>
+      </div>`
+    document.getElementById('ts-retry').addEventListener('click', () => {
+      el.innerHTML = '<p class="ts-empty">Loading…</p>'
+      load()
+    })
   }
 
   function renderTones(results) {
     const el = document.getElementById('ts-tones')
     if (!el) return
+    el.className = 'ts-tones'
     const buckets = bucketAnswers(results)
     const keys = Object.keys(ACTIVITY_META).filter(k => buckets[k]?.length)
     if (!keys.length) { el.innerHTML = '<p class="card ts-empty">No test/practice data yet.</p>'; return }
-    el.innerHTML = keys.map((k) => {
+    el.innerHTML = '<div class="ts-section-title">Most recent attempt per activity</div>' + keys.map((k) => {
       const answers = buckets[k]
       const analysis = analyzeBucket(k, answers)
       const score = answers.filter(a => a.correct).length
@@ -74,7 +92,7 @@ export function teacherStudentView(container) {
         <div class="ts-history-list">
           ${results.map(r => `
             <div class="ts-history-row">
-              <span class="ts-history-type">${TEST_LABEL[r.test_type] || r.test_type}</span>
+              <span class="ts-history-type">${escapeHtml(TEST_LABEL[r.test_type] || r.test_type)}</span>
               <span class="ts-history-score">${r.score}/${r.total}</span>
               <span class="ts-history-date">${(r.created_at || '').slice(0, 16).replace('T', ' ')}</span>
             </div>`).join('')}

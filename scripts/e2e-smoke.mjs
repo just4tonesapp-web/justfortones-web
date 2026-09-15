@@ -57,28 +57,88 @@ async function httpChecks() {
   const analytics = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_analytics`, { method: 'POST', headers: H, body: '{}' })).json()
   check('analytics RPC', typeof analytics.total_users === 'number', `users=${analytics.total_users}`)
 
-  // Teacher dashboard RPC contracts — only runs once smoketest.claude is
-  // manually flagged is_teacher=true; silently skipped otherwise (same as
-  // every other guest-account-inapplicable check in this file).
-  if (login.id && login.is_teacher) {
-    let classes = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_teacher_classes`, { method: 'POST', headers: H, body: JSON.stringify({ p_teacher_id: login.id }) })).json()
-    if (!Array.isArray(classes) || !classes.length) {
-      const created = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_create_class`, { method: 'POST', headers: H, body: JSON.stringify({ p_teacher_id: login.id, p_name: 'E2E Smoke Class' }) })).json()
-      check('create class RPC', !!created.code, JSON.stringify(created))
-      classes = created.code ? [created] : []
-    } else {
-      check('create class RPC', true, 'reused existing smoke class')
-    }
-    const cls = classes[0]
-    if (cls) {
-      let student = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_login`, { method: 'POST', headers: H, body: JSON.stringify({ p_username: 'smoketest.claude.student', p_password: 'j4t-smoke-2026' }) })).json()
-      if (!student.id) {
-        student = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_signup`, { method: 'POST', headers: H, body: JSON.stringify({ p_username: 'smoketest.claude.student', p_password: 'j4t-smoke-2026' }) })).json()
+  // ── Teacher dashboard RPC contracts ──
+  // Runs only when SMOKE_TEACHER_USER/PASS are set (CI secrets). Deliberately
+  // NOT the smoketest.claude account: its password is committed in this file,
+  // and is_teacher is the only thing gating app_create_class on the production
+  // database — flagging a publicly-passworded account would hand class creation
+  // on the live pilot DB to anyone who reads the repo.
+  const TEACHER_USER = process.env.SMOKE_TEACHER_USER
+  const TEACHER_PASS = process.env.SMOKE_TEACHER_PASS
+  if (!TEACHER_USER || !TEACHER_PASS) {
+    console.log('↷ WARN: teacher dashboard RPCs NOT covered — set SMOKE_TEACHER_USER / SMOKE_TEACHER_PASS (CI secrets) to run them')
+  } else {
+    // Log shape, never payload: these rows carry real students' usernames and scores.
+    const keysOf = (x) => (Array.isArray(x) ? `${x.length} rows, keys=${Object.keys(x[0] || {}).join(',')}` : JSON.stringify(x).slice(0, 160))
+    const rpc = async (fn, body) =>
+      (await fetch(`${SUPABASE}/rest/v1/rpc/${fn}`, { method: 'POST', headers: H, body: JSON.stringify(body) })).json()
+
+    const teacher = await rpc('app_login', { p_username: TEACHER_USER, p_password: TEACHER_PASS })
+    check('teacher login', !!teacher.id && teacher.is_teacher === true, teacher.error || `is_teacher=${teacher.is_teacher}`)
+
+    if (teacher.id && teacher.is_teacher) {
+      // Bind the smoke to its OWN class by name. Never classes[0]: the configured
+      // teacher is a real account, and its newest class is very likely the live
+      // pilot class — enrolling a bot student there would corrupt the roster and
+      // the tone numbers the pilot is evaluated on, with no un-join path.
+      const SMOKE_CLASS = 'E2E Smoke Class'
+      const classes = await rpc('app_teacher_classes', { p_teacher_id: teacher.id })
+      let cls = Array.isArray(classes) ? classes.find(c => c.name === SMOKE_CLASS) : null
+      if (!cls) {
+        const made = await rpc('app_create_class', { p_teacher_id: teacher.id, p_name: SMOKE_CLASS })
+        // Assert a POSITIVE shape: a PostgREST error body ({code, message, …})
+        // also has a truthy `.code`, so `!!made.code` would pass for a missing
+        // function or a revoked grant.
+        check('create class RPC', typeof made.id === 'string' && /^[A-Z2-9]{6}$/.test(made.code || ''), JSON.stringify(made))
+        cls = made.id ? made : null
+      } else {
+        // Don't create a class on every nightly run — exercise the validation
+        // path instead, which still proves the function exists and is granted.
+        const probe = await rpc('app_create_class', { p_teacher_id: teacher.id, p_name: '  ' })
+        check('create class RPC', probe.error === 'name required', JSON.stringify(probe))
       }
-      const join = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_join_class`, { method: 'POST', headers: H, body: JSON.stringify({ p_user_id: student.id, p_code: cls.code }) })).json()
-      check('join class RPC', !!join.ok, JSON.stringify(join))
-      const roster = await (await fetch(`${SUPABASE}/rest/v1/rpc/app_teacher_roster`, { method: 'POST', headers: H, body: JSON.stringify({ p_teacher_id: login.id, p_class_id: cls.id }) })).json()
-      check('teacher roster RPC', Array.isArray(roster) && roster.some(s => s.id === student.id), `${Array.isArray(roster) ? roster.length : 0} students`)
+
+      if (cls) {
+        const SUSER = 'smoketest.claude.student'
+        let student = await rpc('app_login', { p_username: SUSER, p_password: 'j4t-smoke-2026' })
+        if (!student.id) student = await rpc('app_signup', { p_username: SUSER, p_password: 'j4t-smoke-2026' })
+
+        const join = await rpc('app_join_class', { p_user_id: student.id, p_code: cls.code })
+        check('join class RPC', join.ok === true, JSON.stringify(join))
+        const bogus = await rpc('app_join_class', { p_user_id: '00000000-0000-0000-0000-000000000000', p_code: cls.code })
+        check('join class rejects unknown user', bogus.error === 'invalid user', JSON.stringify(bogus))
+
+        // Seed one result so the two reads below are falsifiable. Both RETURNS
+        // TABLE functions return an EMPTY set when their ownership guard fails,
+        // so `Array.isArray([])` alone would stay green on a broken guard.
+        // app_save_result is idempotent on (user_id, test_type, created_at), so a
+        // fixed timestamp means this never accumulates rows.
+        await rpc('app_save_result', {
+          p_user_id: student.id, p_test_type: 'A', p_score: 7, p_total: 8, p_passed: true,
+          p_details: { e2e: true, answers: [1, 1, 2, 2, 3, 3, 4, 4].map((t, i) => ({ tone: t, correct: i !== 4 })) },
+          p_created_at: '2026-01-01T00:00:00.000Z',
+        })
+
+        const roster = await rpc('app_teacher_roster', { p_teacher_id: teacher.id, p_class_id: cls.id })
+        check('teacher roster RPC', Array.isArray(roster) && roster.some(r => r.username === SUSER),
+          `${Array.isArray(roster) ? roster.length : 0} students`)
+        check('roster withholds student uuids', Array.isArray(roster) && roster.length > 0 && roster.every(r => !r.id && !r.user_id),
+          keysOf(roster))
+
+        const stats = await rpc('app_teacher_class_stats', { p_teacher_id: teacher.id, p_class_id: cls.id })
+        check('teacher class stats RPC', typeof stats.total_students === 'number', JSON.stringify(stats).slice(0, 120))
+
+        // These two are RETURNS TABLE functions — a column name colliding with an
+        // output parameter fails only at CALL time, never at CREATE time.
+        const classResults = await rpc('app_teacher_class_results', { p_teacher_id: teacher.id, p_class_id: cls.id })
+        check('teacher class results RPC', Array.isArray(classResults) && classResults.length > 0, keysOf(classResults))
+        check('class results withhold uuids', Array.isArray(classResults) && classResults.every(r => !r.id && !r.user_id), keysOf(classResults))
+        const one = await rpc('app_teacher_student_results', { p_teacher_id: teacher.id, p_class_id: cls.id, p_username: SUSER })
+        check('teacher student results RPC', Array.isArray(one) && one.length > 0, keysOf(one))
+
+        const denied = await rpc('app_teacher_roster', { p_teacher_id: student.id, p_class_id: cls.id })
+        check('roster denies a non-owner', !!denied?.error, JSON.stringify(denied).slice(0, 120))
+      }
     }
   }
 

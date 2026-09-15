@@ -43,6 +43,13 @@ alter table public.classes enable row level security;
 alter table public.app_users add column if not exists is_teacher boolean not null default false;
 alter table public.app_users add column if not exists class_id uuid references public.classes(id);
 alter table public.app_users add column if not exists class_joined_at timestamptz;
+-- Stated separately (not inline above) because `add column if not exists` is
+-- skipped entirely on a database that already has the column. Without
+-- `on delete set null` here, the `on delete cascade` on classes.teacher_id can
+-- never fire: deleting a teacher aborts on the students still referencing the class.
+alter table public.app_users drop constraint if exists app_users_class_id_fkey;
+alter table public.app_users add constraint app_users_class_id_fkey
+  foreign key (class_id) references public.classes(id) on delete set null;
 
 create or replace function public.app_signup(p_username text, p_password text)
 returns json language plpgsql security definer set search_path = public
@@ -80,6 +87,28 @@ begin
   );
 end $$;
 
+-- Re-read the session fields app_login returns, for a client whose cached
+-- session predates a change made in the database (is_teacher being flipped,
+-- or a class joined on another device).
+create or replace function public.app_session(p_user_id uuid)
+returns json language plpgsql security definer stable set search_path = public
+as $$
+declare u app_users; c classes;
+begin
+  select * into u from app_users where id = p_user_id;
+  if u.id is null then
+    return json_build_object('error', 'invalid user');
+  end if;
+  if u.class_id is not null then
+    select * into c from classes where id = u.class_id;
+  end if;
+  return json_build_object(
+    'id', u.id, 'username', u.username, 'is_teacher', u.is_teacher,
+    'class_id', u.class_id, 'class_name', c.name, 'class_code', c.code
+  );
+end $$;
+
+grant execute on function public.app_session(uuid) to anon, authenticated;
 grant execute on function public.app_signup(text, text) to anon, authenticated;
 grant execute on function public.app_login(text, text) to anon, authenticated;
 
@@ -169,11 +198,11 @@ as $$
 select jsonb_build_object(
   'generated_at', now(),
   'total_users', (
-    select count(*) from app_users where username <> 'smoketest.claude'
+    select count(*) from app_users where username not like 'smoketest.claude%'
   ),
   'results_total', (
     select count(*) from app_results r
-    where not exists (select 1 from app_users u where u.id = r.user_id and u.username = 'smoketest.claude')
+    where not exists (select 1 from app_users u where u.id = r.user_id and u.username like 'smoketest.claude%')
   ),
   'first_activity', (select min(created_at) from app_results),
   'last_activity',  (select max(created_at) from app_results),
@@ -269,6 +298,16 @@ begin
   if cl.id is null then
     return json_build_object('error', 'invalid code');
   end if;
+  -- Same existence guard app_save_result uses. Without it a stale or bogus uuid
+  -- updated zero rows and still returned ok:true.
+  if not exists (select 1 from app_users where id = p_user_id) then
+    return json_build_object('error', 'invalid user');
+  end if;
+  -- A teacher enrolled in their own class is counted as a student in every
+  -- roster, stat and tone number they then read, and there is no un-join path.
+  if cl.teacher_id = p_user_id then
+    return json_build_object('error', 'you are the teacher of this class');
+  end if;
   update app_users set class_id = cl.id, class_joined_at = now() where id = p_user_id;
   return json_build_object('ok', true, 'class_id', cl.id, 'class_name', cl.name, 'class_code', cl.code);
 end $$;
@@ -290,12 +329,12 @@ returns jsonb language plpgsql security definer stable set search_path = public
 as $$
 declare result jsonb;
 begin
-  if not exists (select 1 from classes where id = p_class_id and teacher_id = p_teacher_id) then
+  if not exists (select 1 from classes c where c.id = p_class_id and c.teacher_id = p_teacher_id) then
     return jsonb_build_object('error', 'not found');
   end if;
   select coalesce(jsonb_agg(row_to_json(t) order by t.username), '[]'::jsonb) into result
   from (
-    select u.id, u.username, u.class_joined_at,
+    select u.username, u.class_joined_at,
       (select max(r.created_at) from app_results r where r.user_id = u.id) as last_activity,
       (select count(*) from app_results r where r.user_id = u.id) as total_attempts,
       (select coalesce(jsonb_object_agg(x.test_type, x.cnt order by x.test_type), '{}'::jsonb)
@@ -311,7 +350,7 @@ create or replace function public.app_teacher_class_stats(p_teacher_id uuid, p_c
 returns jsonb language plpgsql security definer stable set search_path = public
 as $$
 begin
-  if not exists (select 1 from classes where id = p_class_id and teacher_id = p_teacher_id) then
+  if not exists (select 1 from classes c where c.id = p_class_id and c.teacher_id = p_teacher_id) then
     return jsonb_build_object('error', 'not found');
   end if;
   return (
@@ -350,31 +389,40 @@ begin
   );
 end $$;
 
-create or replace function public.app_teacher_student_results(p_teacher_id uuid, p_student_id uuid)
-returns setof app_results language plpgsql security definer stable set search_path = public
+drop function if exists public.app_teacher_student_results(uuid, uuid);
+create or replace function public.app_teacher_student_results(p_teacher_id uuid, p_class_id uuid, p_username text)
+returns table (
+  test_type text, score integer, total integer, passed boolean, details jsonb, created_at timestamptz
+) language plpgsql security definer stable set search_path = public
 as $$
 begin
   if not exists (
     select 1 from app_users u join classes c on c.id = u.class_id
-    where u.id = p_student_id and c.teacher_id = p_teacher_id
+    where u.username = p_username and u.class_id = p_class_id and c.teacher_id = p_teacher_id
   ) then
     return;
   end if;
-  return query select * from app_results where user_id = p_student_id order by created_at desc;
+  return query
+    select r.test_type, r.score, r.total, r.passed, r.details, r.created_at
+    from app_results r
+    join app_users u on u.id = r.user_id
+    where u.username = p_username and u.class_id = p_class_id
+    order by r.created_at desc;
 end $$;
 
+drop function if exists public.app_teacher_class_results(uuid, uuid);
 create or replace function public.app_teacher_class_results(p_teacher_id uuid, p_class_id uuid)
 returns table (
-  id bigint, user_id uuid, username text, test_type text, score integer,
+  username text, test_type text, score integer,
   total integer, passed boolean, details jsonb, created_at timestamptz
 ) language plpgsql security definer stable set search_path = public
 as $$
 begin
-  if not exists (select 1 from classes where id = p_class_id and teacher_id = p_teacher_id) then
+  if not exists (select 1 from classes c where c.id = p_class_id and c.teacher_id = p_teacher_id) then
     return;
   end if;
   return query
-    select r.id, r.user_id, u.username, r.test_type, r.score, r.total, r.passed, r.details, r.created_at
+    select u.username, r.test_type, r.score, r.total, r.passed, r.details, r.created_at
     from app_results r
     join app_users u on u.id = r.user_id
     where u.class_id = p_class_id
@@ -386,5 +434,5 @@ grant execute on function public.app_join_class(uuid, text) to anon, authenticat
 grant execute on function public.app_teacher_classes(uuid) to anon, authenticated;
 grant execute on function public.app_teacher_roster(uuid, uuid) to anon, authenticated;
 grant execute on function public.app_teacher_class_stats(uuid, uuid) to anon, authenticated;
-grant execute on function public.app_teacher_student_results(uuid, uuid) to anon, authenticated;
+grant execute on function public.app_teacher_student_results(uuid, uuid, text) to anon, authenticated;
 grant execute on function public.app_teacher_class_results(uuid, uuid) to anon, authenticated;
