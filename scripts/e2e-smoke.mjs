@@ -37,7 +37,7 @@ async function httpChecks() {
   const asset = (html.match(/assets\/index-[^"]+\.js/) || [])[0]
   check('bundle referenced', !!asset, asset)
 
-  for (const f of ['audio/syllables/ma1.m4a', 'audio/disyllables/11/ka1fei1.m4a', 'audio/tone-change/33/ni3hao3.m4a']) {
+  for (const f of ['audio/syllables/ma1.m4a', 'audio/disyllables/11/ka1fei1.m4a', 'audio/tone-change/33/ni3hao3.m4a', 'audio/disyllables-adv/21/hu2po1.female.mp3', 'audio/disyllables-adv/21/hu2po1.male.mp3']) {
     const r = await fetch(BASE + f, { method: 'HEAD' })
     check(`asset ${f}`, r.ok, `HTTP ${r.status}`)
   }

@@ -6,7 +6,7 @@
 import { navigate } from '../router.js'
 import { SYLLABLE_POOL, applyTone, getTTSChar, shuffle, hasCharacter } from '../utils/pinyin.js'
 import { speakChinese, playDisyllable } from '../utils/audio.js'
-import { DISYLLABLE_BY_PAIR, hasDisyllableRecording } from '../utils/disyllableManifest.js'
+import { DISYLLABLE_BY_PAIR, DISYLLABLE_ADV_BY_PAIR, hasDisyllableRecording } from '../utils/disyllableManifest.js'
 import { saveResult, attemptsToday, DAILY_TEST_LIMIT } from '../services/progressService.js'
 import {
   analyzeDisyllabic, buildReportHTML, TONE_REPORT_CSS, bindAccordion,
@@ -41,11 +41,10 @@ export function testBView(container) {
 
     const pickRecorded = (t1, t2) => {
       const key = `${t1}${t2}`
-      let items = DISYLLABLE_BY_PAIR[key] || []
       // Jul 8 decision: prefer ADVANCED (HSK 7-9) words when recorded — known
       // words get answered from memory ("同学 is 2-2"), not by listening.
-      const adv = items.filter(it => it.adv)
-      if (adv.length) items = adv
+      const adv = DISYLLABLE_ADV_BY_PAIR[key] || []
+      const items = adv.length ? adv : (DISYLLABLE_BY_PAIR[key] || [])
       const fresh = items.filter(it => !usedFiles.has(`${key}/${it.file}`) && !previousFiles.has(`${key}/${it.file}`))
       const cand = items.filter(it => !usedFiles.has(`${key}/${it.file}`))
       const pool = fresh.length ? fresh : (cand.length ? cand : items)
